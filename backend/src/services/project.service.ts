@@ -4,9 +4,7 @@ import { ProjectStatus } from '@prisma/client'
 
 export const getAllProjects = async (userId: number) => {
   return prisma.project.findMany({
-    where: {
-      members: { some: { userId } }
-    },
+    where: { members: { some: { userId } } },
     include: {
       members: { include: { user: { select: { id: true, name: true, email: true } } } },
       _count: { select: { tasks: true } }
@@ -17,16 +15,13 @@ export const getAllProjects = async (userId: number) => {
 
 export const getProjectById = async (projectId: number, userId: number) => {
   const project = await prisma.project.findFirst({
-    where: {
-      id: projectId,
-      members: { some: { userId } }
-    },
+    where: { id: projectId, members: { some: { userId } } },
     include: {
-      members: { include: { user: { select: { id: true, name: true, email: true, role: true } } } },
+      members: {
+        include: { user: { select: { id: true, name: true, email: true, role: true } } }
+      },
       tasks: {
-        include: {
-          assignee: { select: { id: true, name: true, email: true } }
-        },
+        include: { assignee: { select: { id: true, name: true, email: true } } },
         orderBy: { createdAt: 'desc' }
       }
     }
@@ -36,16 +31,13 @@ export const getProjectById = async (projectId: number, userId: number) => {
   return project
 }
 
-export const createProject = async (
-  userId: number,
-  body: { name: string; description?: string }
-) => {
+export const createProject = async (userId: number, body: { name: string; description?: string }) => {
   return prisma.project.create({
     data: {
       name: body.name,
       description: body.description,
       members: {
-        create: { userId }
+        create: { userId, role: 'OWNER' }
       }
     },
     include: {
@@ -72,11 +64,12 @@ export const updateProject = async (
 }
 
 export const deleteProject = async (projectId: number, userId: number) => {
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, members: { some: { userId } } }
+  const member = await prisma.projectMember.findUnique({
+    where: { userId_projectId: { userId, projectId } }
   })
 
-  if (!project) throw new AppError(404, 'Proyecto no encontrado')
+  if (!member) throw new AppError(404, 'Proyecto no encontrado')
+  if (member.role !== 'OWNER') throw new AppError(403, 'Solo el dueño puede eliminar el proyecto')
 
   await prisma.project.delete({ where: { id: projectId } })
 }
@@ -98,16 +91,31 @@ export const addMember = async (projectId: number, memberEmail: string, userId: 
   if (alreadyMember) throw new AppError(409, 'El usuario ya es miembro del proyecto')
 
   return prisma.projectMember.create({
-    data: { userId: userToAdd.id, projectId }
+    data: {
+      userId: userToAdd.id,
+      projectId,
+      role: 'MEMBER' // ← fix principal
+    }
   })
 }
 
 export const removeMember = async (projectId: number, memberId: number, userId: number) => {
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, members: { some: { userId } } }
+  const requester = await prisma.projectMember.findUnique({
+    where: { userId_projectId: { userId, projectId } }
   })
 
-  if (!project) throw new AppError(404, 'Proyecto no encontrado')
+  if (!requester) throw new AppError(404, 'Proyecto no encontrado')
+
+  // ✅ Puede quitar si es Owner O si se está retirando a sí mismo
+  const isSelf = memberId === userId
+  if (!isSelf && requester.role !== 'OWNER') {
+    throw new AppError(403, 'Solo el dueño puede quitar otros miembros')
+  }
+
+  // Owner no puede abandonar su propio proyecto
+  if (isSelf && requester.role === 'OWNER') {
+    throw new AppError(400, 'El dueño no puede abandonar el proyecto. Elimínalo si ya no lo necesitas.')
+  }
 
   await prisma.projectMember.delete({
     where: { userId_projectId: { userId: memberId, projectId } }

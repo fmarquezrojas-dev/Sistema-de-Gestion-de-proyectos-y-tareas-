@@ -35,7 +35,24 @@ export const refreshToken = async (req: Request, res: Response, next: NextFuncti
   }
 }
 
+
 export const logout = (req: Request, res: Response) => {
   res.clearCookie('refreshToken')
   res.json({ data: null, message: 'Sesión cerrada correctamente' })
+}
+
+export const updateProfile = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).user.userId
+    const result = await authService.updateProfile(userId, req.body)
+    res.json({ data: result })
+  } catch (err) { next(err) }
+}
+
+export const changePassword = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).user.userId
+    await authService.changePassword(userId, req.body)
+    res.json({ data: null, message: 'Contraseña actualizada correctamente' })
+  } catch (err) { next(err) }
 }

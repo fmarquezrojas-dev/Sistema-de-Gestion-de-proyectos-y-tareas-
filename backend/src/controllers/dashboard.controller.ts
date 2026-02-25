@@ -12,6 +12,6 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
 export const getProjectSummary = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await dashboardService.getProjectSummary(Number(req.params.projectId))
-    res.json({ data })
+    res.json(data)
   } catch (err) { next(err) }
 }

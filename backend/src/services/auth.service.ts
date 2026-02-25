@@ -66,6 +66,30 @@ export const login = async (body: { email: string; password: string }) => {
     }
   }
 }
+export const updateProfile = async (userId: number, body: { name: string; email: string }) => {
+  const existing = await prisma.user.findFirst({
+    where: { email: body.email, NOT: { id: userId } }
+  })
+  if (existing) throw new AppError(409, 'El email ya está en uso')
+
+  return prisma.user.update({
+    where: { id: userId },
+    data: { name: body.name, email: body.email },
+    select: { id: true, name: true, email: true, role: true }
+  })
+}
+
+export const changePassword = async (userId: number, body: { currentPassword: string; newPassword: string }) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  if (!user) throw new AppError(404, 'Usuario no encontrado')
+
+  const valid = await bcrypt.compare(body.currentPassword, user.password)
+  if (!valid) throw new AppError(401, 'La contraseña actual es incorrecta')
+
+  const hashed = await bcrypt.hash(body.newPassword, 10)
+  await prisma.user.update({ where: { id: userId }, data: { password: hashed } })
+}
+
 
 export const refreshToken = async (token: string) => {
   if (!token) throw new AppError(401, 'Refresh token no proporcionado')

@@ -1,6 +1,7 @@
 import { Router } from 'express'
-import { register, login, refreshToken, logout } from '../controllers/auth.controller'
+import { register, login, refreshToken, logout, updateProfile, changePassword } from '../controllers/auth.controller'
 import { validate } from '../middlewares/validate'
+import { authenticate } from '../middlewares/authMiddleware'
 import { z } from 'zod'
 
 const router = Router()
@@ -20,5 +21,7 @@ router.post('/register', validate(registerSchema), register)
 router.post('/login', validate(loginSchema), login)
 router.post('/refresh', refreshToken)
 router.post('/logout', logout)
+router.put('/profile', authenticate, updateProfile)
+router.put('/password', authenticate, changePassword)
 
 export default router

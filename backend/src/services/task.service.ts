@@ -136,12 +136,15 @@ export const deleteTask = async (taskId: number, userId: number) => {
 export const getMyTasks = async (userId: number) => {
   return prisma.task.findMany({
     where: {
-      assigneeId: userId,
-      status: { not: 'COMPLETED' }
+     // Mantenemos esto para que veas tus responsabilidades
+      // 🚀 ELIMINAMOS el filtro de 'not: COMPLETED'
     },
     include: {
       project: { select: { id: true, name: true } }
     },
-    orderBy: { dueDate: 'asc' }
+    orderBy: [
+      { status: 'asc' }, // Opcional: Agrupa Pendientes primero, Completadas al final
+      { dueDate: 'asc' } 
+    ]
   })
 }
