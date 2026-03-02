@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import * as projectService from '../services/project.service'
 
+
 export const getAll = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).user.userId
@@ -55,4 +56,23 @@ export const removeMember = async (req: Request, res: Response, next: NextFuncti
     await projectService.removeMember(Number(req.params.id), Number(req.params.memberId), userId)
     res.json({ data: null, message: 'Miembro eliminado correctamente' })
   } catch (err) { next(err) }
+}
+
+export const updateMemberPermissions = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const adminId = (req as any).user.userId
+    const projectId = Number(req.params.id)
+    const memberId = Number(req.params.userId)
+    
+    const result = await projectService.updateMemberPermissions(
+      projectId,
+      memberId,
+      adminId,
+      req.body
+    )
+    
+    res.json({ data: result, message: 'Permisos actualizados correctamente' })
+  } catch (err) { 
+    next(err) 
+  }
 }

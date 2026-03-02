@@ -7,6 +7,7 @@ interface AuthContextType {
   accessToken: string | null
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  updateUser: (data: Partial<User>) => void // ✅ Ahora está correctamente definido en la interfaz
   loading: boolean
 }
 
@@ -21,7 +22,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const token = localStorage.getItem('accessToken')
     const savedUser = localStorage.getItem('user')
     
-    // PROTECCIÓN: Verificamos que savedUser no sea null ni el string "undefined"
+    // Verificamos que existan datos válidos
     if (token && savedUser && savedUser !== 'undefined') {
       try {
         setAccessToken(token)
@@ -36,7 +37,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (email: string, password: string) => {
     const res = await api.post('/auth/login', { email, password })
-    const { token, user: userData } = res.data.data // Ajustado a nuestra estructura de API
+    
+    // CAMBIO AQUÍ: Usamos 'accessToken' para coincidir con tu backend
+    const { accessToken: token, user: userData } = res.data.data 
     
     localStorage.setItem('accessToken', token)
     localStorage.setItem('user', JSON.stringify(userData))
@@ -46,14 +49,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const logout = async () => {
+    // Es buena práctica intentar avisar al backend, pero opcional
+    try { await api.post('/auth/logout') } catch (e) { /* ignore */ }
+    
     localStorage.removeItem('accessToken')
     localStorage.removeItem('user')
     setAccessToken(null)
     setUser(null)
   }
 
+  // ✅ Ahora updateUser está DENTRO del componente AuthProvider
+ const updateUser = (data: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return null
+      const updated = { ...prev, ...data }
+      
+      // Persistimos los cambios (incluyendo avatarUrl y avatarColor)
+      localStorage.setItem('user', JSON.stringify(updated))
+      return updated
+    })
+  }
+
   return (
-    <AuthContext.Provider value={{ user, accessToken, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, accessToken, login, logout, updateUser, loading }}>
       {children}
     </AuthContext.Provider>
   )

@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { getAll, getById, create, update, remove, addMember, removeMember } from '../controllers/project.controller'
+import { getAll, getById, create, update, remove, addMember, removeMember, updateMemberPermissions } from '../controllers/project.controller'
 import { authenticate } from '../middlewares/authMiddleware'
 import { validate } from '../middlewares/validate'
 import { z } from 'zod'
@@ -21,6 +21,11 @@ const memberSchema = z.object({
   email: z.string().email()
 })
 
+const permissionsSchema = z.object({
+  canCreateTasks: z.boolean(),
+  canEditTasks: z.boolean()
+})
+
 router.use(authenticate)
 
 router.get('/', getAll)
@@ -30,5 +35,6 @@ router.put('/:id', validate(updateSchema), update)
 router.delete('/:id', remove)
 router.post('/:id/members', validate(memberSchema), addMember)
 router.delete('/:id/members/:memberId', removeMember)
+router.patch('/:id/members/:userId/permissions', validate(permissionsSchema), updateMemberPermissions)
 
 export default router

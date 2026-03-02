@@ -1,0 +1,53 @@
+
+services:
+  # Base de Datos
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "1234"
+      POSTGRES_DB: sist_proytask
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Backend
+  backend:
+    build: ./backend
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    environment:
+      # ⚠️ IMPORTANTE: Cambiamos 'localhost' por 'db' (nombre del servicio arriba)
+      DATABASE_URL: "postgresql://postgres:1234@db:5432/sist_proytask"
+      JWT_SECRET: tu_jwt_secret_super_seguro
+      JWT_REFRESH_SECRET: tu_refresh_secret_super_seguro
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      PORT: 3000
+      # ⚠️ Cambiamos 'localhost' por 'notification-service'
+      NOTIFICATION_SERVICE_URL: http://notification-service:8000
+
+  # Servicio de Notificaciones
+  notification-service:
+    build: ./notification-service
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: 8000
+
+  # Frontend
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3000
+
+volumes:
+  postgres_data:

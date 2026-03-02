@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "dev": "concurrently -n \"BACK,FRONT,PY-NOTIF\" -c \"blue,green,yellow\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\" \"npm run notifications\"",
     "backend": "npm run dev --prefix backend",
-    "frontend": "npm run dev --prefix frontend"
+    "frontend": "npm run dev --prefix frontend",
+    "notifications": "cd notification-service && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
   },
   "keywords": [],
   "author": "",

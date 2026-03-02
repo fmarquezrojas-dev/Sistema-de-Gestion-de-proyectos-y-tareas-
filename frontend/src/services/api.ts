@@ -1,7 +1,8 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'http://localhost:3000/api',
+  // ✅ Asegúrate de que el puerto coincida con tu backend (4000 o 3000)
+  baseURL: 'http://localhost:3000/api', 
   withCredentials: true
 })
 
@@ -27,7 +28,6 @@ api.interceptors.response.use(
           {},
           { withCredentials: true }
         )
-        // Ajustado a la estructura común de respuesta: res.data.data.accessToken
         const newToken = res.data.data.accessToken
         localStorage.setItem('accessToken', newToken)
         
@@ -38,6 +38,7 @@ api.interceptors.response.use(
         return api(original)
       } catch (refreshError) {
         localStorage.removeItem('accessToken')
+        localStorage.removeItem('user') // 👈 Añadido: Limpia también el usuario
         window.location.href = '/login'
         return Promise.reject(refreshError)
       }
@@ -48,7 +49,6 @@ api.interceptors.response.use(
 
 /**
  * SERVICIOS ORGANIZADOS 
- * Estos conectan directamente con los controladores del backend
  */
 
 export const dashboardService = {
@@ -67,12 +67,8 @@ export const projectService = {
     const { data } = await api.get(`/projects/${id}`)
     return data
   },
+  // ✅ CORREGIDO: Usar .post en lugar de .get
   create: async (projectData: { name: string; description?: string }) => {
-    const { data } = await api.get('/projects', projectData as any) // Se usa post generalmente, corregido abajo
-    return data
-  },
-  // Corregido a POST para creación
-  createNew: async (projectData: { name: string; description?: string }) => {
     const { data } = await api.post('/projects', projectData)
     return data
   },

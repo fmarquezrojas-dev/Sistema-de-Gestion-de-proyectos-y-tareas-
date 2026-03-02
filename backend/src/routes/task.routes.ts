@@ -1,9 +1,20 @@
 import { Router } from 'express'
-import { getByProject, getById, create, update, remove, getMyTasks } from '../controllers/task.controller'
-import { authenticate } from '../middlewares/authMiddleware' // Usando tu import original
+// 1. Importar updateStatus (que es como la nombramos en el controlador)
+import { 
+  getByProject, 
+  getById, 
+  create, 
+  update, 
+  updateStatus, // <--- Añadida esta importación
+  remove, 
+  getMyTasks,
+  removeComment 
+} from '../controllers/task.controller'
+import { authenticate } from '../middlewares/authMiddleware'
 import { validate } from '../middlewares/validate'
 import { z } from 'zod'
 import { isProjectMember } from '../middlewares/member.middleware'
+import { getComments, addComment } from '../controllers/task.controller' // Asegúrate de que existan
 
 const router = Router()
 
@@ -22,18 +33,23 @@ const updateSchema = createSchema.partial()
 // Todas las rutas de tareas requieren estar logueado
 router.use(authenticate)
 
-// 1. Obtener tareas globales del usuario logueado
+// 1. Tareas personales
 router.get('/my-tasks', getMyTasks)
 
-// 2. Rutas que dependen de un Proyecto (Requieren verificar membresía)
-// Aplicamos isProjectMember porque el projectId viene en la URL
+// 2. Rutas por Proyecto
 router.get('/project/:projectId', isProjectMember, getByProject)
 router.post('/project/:projectId', isProjectMember, validate(createSchema), create)
 
 // 3. Rutas de tareas individuales
-// Aquí la seguridad se maneja usualmente dentro del controlador validando que el userId sea el dueño/asignado
 router.get('/:id', getById)
 router.put('/:id', validate(updateSchema), update)
 router.delete('/:id', remove)
+router.get('/:id/comments', getComments)
+router.post('/:id/comments', addComment)
+router.delete('/:id/comments/:commentId', removeComment)
+
+// 4. Actualización rápida de estado (NUEVA)
+// Usamos .patch porque es una actualización parcial
+router.patch('/:id/status', updateStatus) 
 
 export default router

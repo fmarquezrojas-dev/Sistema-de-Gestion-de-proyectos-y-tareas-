@@ -7,31 +7,65 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ── MODELOS DE USUARIO ────────────────────────────────────────────────────────
+
 model User {
-  id        Int             @id @default(autoincrement())
-  name      String
-  email     String          @unique
-  password  String
-  role      Role            @default(MEMBER)
-  projects  ProjectMember[]
-  tasks     Task[]          // Tareas donde este usuario es el responsable (assignee)
-  createdAt DateTime        @default(now())
+  id           Int             @id @default(autoincrement())
+  name         String
+  email        String          @unique
+  password     String
+  role         Role            @default(MEMBER)
+  avatarColor  String?         @default("#4f46e5")
+  avatarUrl    String?         
+  createdAt    DateTime        @default(now())
+
+  // Relaciones existentes
+  projects     ProjectMember[]
+  tasks        Task[]          // Tareas asignadas a este usuario
+
+  // NUEVAS Relaciones para v2.0 (Requeridas por Prisma)
+  comments     Comment[]
+  activityLogs ActivityLog[]
+  attachments  Attachment[]
 
   @@map("users")
 }
+
+// ── MODELOS DE PROYECTO ──────────────────────────────────────────────────────
 
 model Project {
   id          Int             @id @default(autoincrement())
   name        String
   description String?
   status      ProjectStatus   @default(ACTIVE)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
   members     ProjectMember[]
   tasks       Task[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt // 👈 Se actualiza solo al editar el proyecto
+  
+  // Relación con Logs (Para ver actividad por proyecto)
+  activityLogs ActivityLog[]
 
   @@map("projects")
 }
+
+model ProjectMember {
+  userId         Int
+  projectId      Int
+  role           ProjectMemberRole @default(MEMBER)
+  joinedAt       DateTime          @default(now())
+  canCreateTasks Boolean           @default(false)
+  canEditTasks   Boolean           @default(false)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([userId, projectId])
+  @@map("project_members")
+}
+
+// ── MODELOS DE TAREAS Y COLABORACIÓN ─────────────────────────────────────────
 
 model Task {
   id          Int        @id @default(autoincrement())
@@ -40,29 +74,81 @@ model Task {
   priority    Priority   @default(MEDIUM)
   status      TaskStatus @default(PENDING)
   dueDate     DateTime?
-  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId   Int
-  assignee    User?      @relation(fields: [assigneeId], references: [id])
-  assigneeId  Int?
   createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt // 👈 Clave para saber cuándo se cambió el estado de la tarea
+  updatedAt   DateTime   @updatedAt
+
+  projectId   Int
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  assigneeId  Int?
+  assignee    User?      @relation(fields: [assigneeId], references: [id])
+
+  // NUEVAS Relaciones para v2.0
+  comments    Comment[]
+  attachments Attachment[]
+  activityLogs ActivityLog[] // Para registrar cambios específicos de esta tarea
 
   @@map("tasks")
 }
 
-model ProjectMember {
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Int
-  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId Int
-  role      ProjectMemberRole @default(MEMBER)
-  joinedAt  DateTime          @default(now()) // 👈 Para saber cuándo se unió un miembro
+model Comment {
+  id        Int      @id @default(autoincrement())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@id([userId, projectId])
-  @@map("project_members")
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  taskId    Int
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
 }
 
-// --- ENUMS ---
+model ActivityLog {
+  id          Int      @id @default(autoincrement())
+  type        String   // TASK_CREATED, TASK_COMPLETED, etc.
+  description String
+  createdAt   DateTime @default(now())
+
+  // Campos informativos (Snapshot para evitar joins pesados si se desea)
+  taskTitle    String?
+  taskStatus   String?
+  taskPriority String?
+  projectName  String?
+
+  // Relaciones
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  projectId   Int?
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  taskId      Int?
+  task        Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("activity_logs")
+}
+
+model Attachment {
+  id        Int      @id @default(autoincrement())
+  url       String   // URL de Cloudinary
+  name      String   // Nombre del archivo
+  mimeType  String
+  size      Int
+  createdAt DateTime @default(now())
+
+  taskId    Int
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("attachments")
+}
+
+// ── ENUMS ────────────────────────────────────────────────────────────────────
 
 enum ProjectMemberRole {
   OWNER

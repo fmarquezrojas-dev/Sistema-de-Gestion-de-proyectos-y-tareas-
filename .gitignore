@@ -1,0 +1,36 @@
+# Dependencias y Builds
+node_modules/
+dist/
+build/
+.next/
+
+# Variables de Entorno (SEGURIDAD)
+.env
+.env.local
+.env.*
+!.env.example
+
+# Python (notification-service)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.pytest_cache/
+
+# Docker y Bases de Datos
+postgres-data/
+pgdata/
+*.db
+*.sqlite
+
+# Logs y Sistema
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Archivos temporales de carga
+uploads/
+tmp/

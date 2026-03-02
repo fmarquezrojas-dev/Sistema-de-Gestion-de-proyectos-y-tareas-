@@ -1,123 +1,196 @@
-import prisma from '../utils/prismaClient'
-import { AppError } from '../middlewares/errorHandler'
-import { ProjectStatus } from '@prisma/client'
+import prisma from "../utils/prismaClient";
+import { AppError } from "../middlewares/errorHandler";
+import { ProjectStatus } from "@prisma/client";
 
 export const getAllProjects = async (userId: number) => {
   return prisma.project.findMany({
     where: { members: { some: { userId } } },
     include: {
-      members: { include: { user: { select: { id: true, name: true, email: true } } } },
-      _count: { select: { tasks: true } }
+      members: {
+        include: { user: { select: { id: true, name: true, email: true, avatarColor: true, avatarUrl: true } } }
+      },
+      _count: { select: { tasks: true } },
+      // ✅ Traer tasks con status para calcular progreso
+      tasks: {
+        select: { id: true, status: true }
+      }
     },
     orderBy: { createdAt: 'desc' }
-  })
-}
+  });
+};
 
 export const getProjectById = async (projectId: number, userId: number) => {
   const project = await prisma.project.findFirst({
     where: { id: projectId, members: { some: { userId } } },
     include: {
       members: {
-        include: { user: { select: { id: true, name: true, email: true, role: true } } }
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              avatarColor: true,
+              avatarUrl: true,
+            }, // ← agrega avatarColor
+          },
+        },
       },
       tasks: {
-        include: { assignee: { select: { id: true, name: true, email: true } } },
-        orderBy: { createdAt: 'desc' }
-      }
-    }
-  })
+        include: {
+          assignee: {
+            select: { id: true, name: true, email: true, avatarColor: true, avatarUrl: true },
+          }, // ← agrega avatarColor
+        },
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
 
-  if (!project) throw new AppError(404, 'Proyecto no encontrado')
-  return project
-}
+  if (!project) throw new AppError(404, "Proyecto no encontrado");
+  return project;
+};
 
-export const createProject = async (userId: number, body: { name: string; description?: string }) => {
+export const createProject = async (
+  userId: number,
+  body: { name: string; description?: string },
+) => {
   return prisma.project.create({
     data: {
       name: body.name,
       description: body.description,
       members: {
-        create: { userId, role: 'OWNER' }
-      }
+        create: { userId, role: "OWNER" },
+      },
     },
     include: {
-      members: { include: { user: { select: { id: true, name: true, email: true } } } }
-    }
-  })
-}
+      members: {
+        include: { user: { select: { id: true, name: true, email: true } } },
+      },
+    },
+  });
+};
 
 export const updateProject = async (
   projectId: number,
   userId: number,
-  body: { name?: string; description?: string; status?: ProjectStatus }
+  body: { name?: string; description?: string; status?: ProjectStatus },
 ) => {
   const project = await prisma.project.findFirst({
-    where: { id: projectId, members: { some: { userId } } }
-  })
+    where: { id: projectId, members: { some: { userId } } },
+  });
 
-  if (!project) throw new AppError(404, 'Proyecto no encontrado')
+  if (!project) throw new AppError(404, "Proyecto no encontrado");
 
   return prisma.project.update({
     where: { id: projectId },
-    data: body
-  })
-}
+    data: body,
+  });
+};
 
 export const deleteProject = async (projectId: number, userId: number) => {
   const member = await prisma.projectMember.findUnique({
-    where: { userId_projectId: { userId, projectId } }
-  })
+    where: { userId_projectId: { userId, projectId } },
+  });
 
-  if (!member) throw new AppError(404, 'Proyecto no encontrado')
-  if (member.role !== 'OWNER') throw new AppError(403, 'Solo el dueño puede eliminar el proyecto')
+  if (!member) throw new AppError(404, "Proyecto no encontrado");
+  if (member.role !== "OWNER")
+    throw new AppError(403, "Solo el dueño puede eliminar el proyecto");
 
-  await prisma.project.delete({ where: { id: projectId } })
-}
+  await prisma.project.delete({ where: { id: projectId } });
+};
 
-export const addMember = async (projectId: number, memberEmail: string, userId: number) => {
+export const addMember = async (
+  projectId: number,
+  memberEmail: string,
+  userId: number,
+) => {
   const project = await prisma.project.findFirst({
-    where: { id: projectId, members: { some: { userId } } }
-  })
+    where: { id: projectId, members: { some: { userId } } },
+  });
 
-  if (!project) throw new AppError(404, 'Proyecto no encontrado')
+  if (!project) throw new AppError(404, "Proyecto no encontrado");
 
-  const userToAdd = await prisma.user.findUnique({ where: { email: memberEmail } })
-  if (!userToAdd) throw new AppError(404, 'Usuario no encontrado')
+  const userToAdd = await prisma.user.findUnique({
+    where: { email: memberEmail },
+  });
+  if (!userToAdd) throw new AppError(404, "Usuario no encontrado");
 
   const alreadyMember = await prisma.projectMember.findUnique({
-    where: { userId_projectId: { userId: userToAdd.id, projectId } }
-  })
+    where: { userId_projectId: { userId: userToAdd.id, projectId } },
+  });
 
-  if (alreadyMember) throw new AppError(409, 'El usuario ya es miembro del proyecto')
+  if (alreadyMember)
+    throw new AppError(409, "El usuario ya es miembro del proyecto");
 
   return prisma.projectMember.create({
     data: {
       userId: userToAdd.id,
       projectId,
-      role: 'MEMBER' // ← fix principal
-    }
-  })
-}
+      role: "MEMBER", // ← fix principal
+    },
+  });
+};
 
-export const removeMember = async (projectId: number, memberId: number, userId: number) => {
+export const removeMember = async (
+  projectId: number,
+  memberId: number,
+  userId: number,
+) => {
   const requester = await prisma.projectMember.findUnique({
-    where: { userId_projectId: { userId, projectId } }
-  })
+    where: { userId_projectId: { userId, projectId } },
+  });
 
-  if (!requester) throw new AppError(404, 'Proyecto no encontrado')
+  if (!requester) throw new AppError(404, "Proyecto no encontrado");
 
   // ✅ Puede quitar si es Owner O si se está retirando a sí mismo
-  const isSelf = memberId === userId
-  if (!isSelf && requester.role !== 'OWNER') {
-    throw new AppError(403, 'Solo el dueño puede quitar otros miembros')
+  const isSelf = memberId === userId;
+  if (!isSelf && requester.role !== "OWNER") {
+    throw new AppError(403, "Solo el dueño puede quitar otros miembros");
   }
 
   // Owner no puede abandonar su propio proyecto
-  if (isSelf && requester.role === 'OWNER') {
-    throw new AppError(400, 'El dueño no puede abandonar el proyecto. Elimínalo si ya no lo necesitas.')
+  if (isSelf && requester.role === "OWNER") {
+    throw new AppError(
+      400,
+      "El dueño no puede abandonar el proyecto. Elimínalo si ya no lo necesitas.",
+    );
   }
 
   await prisma.projectMember.delete({
-    where: { userId_projectId: { userId: memberId, projectId } }
+    where: { userId_projectId: { userId: memberId, projectId } },
+  });
+};
+
+export const updateMemberPermissions = async (
+  projectId: number,
+  memberId: number,
+  adminId: number,
+  data: { canCreateTasks: boolean; canEditTasks: boolean }
+) => {
+  // 1. Validar que quien intenta cambiar permisos es el OWNER
+  const adminMember = await prisma.projectMember.findUnique({
+    where: {
+      userId_projectId: { userId: adminId, projectId }
+    }
+  })
+
+  if (!adminMember || adminMember.role !== 'OWNER') {
+    throw new AppError(403, 'Solo el propietario del proyecto puede modificar permisos.')
+  }
+
+  // 2. Ejecutar la actualización en la base de datos
+  return await prisma.projectMember.update({
+    where: {
+      userId_projectId: {
+        userId: memberId,
+        projectId: projectId,
+      },
+    },
+    data: {
+      canCreateTasks: data.canCreateTasks,
+      canEditTasks: data.canEditTasks,
+    },
   })
 }
