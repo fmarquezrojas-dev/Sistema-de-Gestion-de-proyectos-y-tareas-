@@ -1,40 +1,69 @@
-SYNKRO — Gestión de Proyectos & Microservicios
-SYNKRO es una plataforma Fullstack diseñada para la gestión colaborativa de equipos. A diferencia de un simple CRUD, el sistema implementa una arquitectura de microservicios, seguridad avanzada con rotación de tokens y un motor de reglas de acceso (RBAC) granular por proyecto.
+# SYNKRO — proyectos y tareas en equipo
 
-🛠️ Core Stack
-Frontend: React 18, TypeScript, Vite, Context API, @dnd-kit (Kanban).
+SYNKRO ayuda a equipos pequeños a organizar proyectos, responsables, vencimientos y comentarios sin perder cambios cuando dos integrantes editan una tarea. Interfaz en español, permisos por proyecto y tablero Kanban.
 
-Backend Principal: Node.js, Express, TypeScript, Prisma ORM.
+## Funcionalidades
 
-Microservicio: Python 3.10, FastAPI, APScheduler (Notificaciones asíncronas).
+- Propietarios y miembros con permisos separados de creación/edición; comentarios y moderación.
+- Sesiones revocables, refresh rotativo, recuperación al recargar y cierre coordinado entre pestañas.
+- Tareas versionadas, conflictos que conservan borradores, revisión explícita e historial transaccional.
+- Kanban con teclado, reconciliación por tarea y recuperación ante red incierta.
+- Correos de asignación, vencimiento próximo y vencida mediante trabajos durables, deduplicación, leases y reintentos acotados.
+- Mailpit local, demo idempotente, instalación PowerShell/Compose y CI configurado.
 
-Base de Datos: PostgreSQL (Queries nativas con $queryRaw para analíticas).
+## Instalación rápida en Windows
 
-Infraestructura: Docker & Docker Compose (4 servicios orquestados).
+Requiere Docker Desktop con contenedores Linux y PowerShell 5.1 o posterior. No necesita Node/Python globales para operar con contenedores.
 
-Storage: Cloudinary SDK (Gestión de assets).
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\synkro.ps1 -Accion Instalar
+.\iniciar_proyecto.bat -Accion Demo
+```
 
-🏗️ Arquitectura y Decisiones Técnicas
-El proyecto se rige bajo una arquitectura en capas estricta (Routes → Middlewares → Controllers → Services → Prisma), garantizando que la lógica de negocio esté aislada de la infraestructura.
+Interfaz http://localhost:5173 · API http://localhost:3000 · Mailpit http://localhost:8025.
 
-🔐 Seguridad & Auth
-Estrategia de Doble Token: Implementación de Access Token (15m) y Refresh Token (7d) en cookies httpOnly.
+**Instalación existente:** si ya existe el volumen histórico sin `.env`, el instalador se detiene para que conserves las credenciales originales. No cambia contraseñas de una base inicializada. Sigue [instalación y baseline](docs/installation.md) antes de migrar.
 
-Interceptores de Axios: Renovación automática de sesión transparente para el usuario ante respuestas 401.
+```powershell
+.\iniciar_proyecto.bat -Accion Iniciar
+.\iniciar_proyecto.bat -Accion Detener
+.\iniciar_proyecto.bat -Accion Estado
+.\iniciar_proyecto.bat -Accion Actualizar -SinNavegador
+```
 
-RBAC Dinámico: Los permisos no son globales; se definen por membresía de proyecto (OWNER, MEMBER) con banderas granulares como canEditTasks.
+Actualizar usa el código presente; no hace git pull/reset. Detener conserva datos. Demo se carga solo cuando se solicita: ana.demo@example.invalid, bruno.demo@example.invalid y carla.demo@example.invalid; contraseña inicial `SynkroDemo2026!`, exclusivamente local. Repetir no restablece datos editados ni contraseñas.
 
-⚡ Optimización y UI
-Tablero Kanban: Implementado con @dnd-kit con actualizaciones optimistas en el cliente para latencia cero percibida.
+## Stack y arquitectura
 
-Zero-Lib Dark Mode: Sistema de temas basado puramente en CSS Custom Properties y data-themes, evitando el overhead de librerías externas.
+Node 22, Express 5.3.0, TypeScript 5.9.3, Prisma 5.22 y PostgreSQL 15 en Compose (tests aislados también en PostgreSQL 17). React 19.3.1, Vite 7.3.8, Context API, Axios y @dnd-kit. Python 3.13, FastAPI/Uvicorn y SMTP; versiones exactas en lockfiles y requirements.txt.
 
-Dashboard de Alto Rendimiento: Uso de agregaciones SQL nativas para calcular KPIs y actividad reciente sin sobrecargar el ORM.
+La API Node centraliza negocio y persistencia en PostgreSQL. Python reclama trabajos mediante HTTP interno protegido, entrega SMTP y confirma resultado; no accede a tablas de negocio. Nginx sirve la SPA compilada. Mailpit es buzón de desarrollo. No hay Redis, brokers ni WebSockets. [Arquitectura](docs/architecture.md).
 
-📦 Estructura del Ecosistema
+`.env.example` describe Compose; el instalador genera secretos solo para configuración nueva. Cloudinary es opcional: sin él se conserva avatar de inicial/color y se informa indisponibilidad de carga. No hace falta SMTP externo. Desarrollo sin Docker y contratos técnicos: documentación enlazada abajo.
 
-├── backend/               # Node.js API (Arquitectura Layered)
-├── frontend/              # React SPA (Pattern: Context + Hooks)
-├── notification-service/  # Python (Polling & SMTP)
-├── docker-compose.yml     # Orquestación de infraestructura
-└── iniciar_proyecto.bat   # Script de despliegue rápido
+## Verificación
+
+51 pruebas backend, 29 frontend, 7 Python y 4 E2E Chromium aprobados; builds y lint frontend global pasan. Integración SMTP real en Mailpit y recorrido Compose con dos usuarios, permisos, conflicto, historial y teclado Kanban ejecutados. Instalación en snapshot sin dependencias, ruta con espacios/Unicode, demo repetida, reinicio y actualización comprobados. [GitHub Actions aprobado](https://github.com/fmarquezrojas-dev/Sistema-de-Gestion-de-proyectos-y-tareas-/actions/runs/43892056352) sobre el commit `a6eda70`.
+
+[Comandos de pruebas](docs/testing.md) · [Evidencia, límites y pendientes](docs/release-readiness.md).
+
+## Capturas reales
+
+Datos sintéticos del recorrido local:
+
+![Detalle e historial en escritorio](docs/screenshots/desktop.png)
+
+[Tablet](docs/screenshots/tablet.png) · [Móvil](docs/screenshots/mobile.png)
+
+## Límites conocidos
+
+Entorno local de portafolio, no despliegue productivo certificado. SMTP aceptado no significa entrega final; unknown requiere revisión explícita y no se reenvía a ciegas. Historial sujeto a cascadas existentes. Sin sincronización instantánea por WebSockets. No hay purga automática de trabajos/sesiones. Dependencias de producción sin hallazgos de npm audit en la verificación; herramientas de desarrollo mantienen deuda documentada. Cloudinary, SMTP externo, HTTPS productivo y navegadores distintos de Chromium no se verificaron.
+
+## Documentación
+
+- [Instalación](docs/installation.md), [operación y respaldo](docs/operations.md).
+- [Autorización](docs/authorization.md), [sesiones](docs/authentication.md), [concurrencia](docs/task-concurrency.md).
+- [Notificaciones y administración local](docs/notifications.md).
+- [Pruebas](docs/testing.md), [roadmap](docs/roadmap.md), [informe de cierre](docs/release-readiness.md), [cambios](CHANGELOG.md).
+
+Entrega disponible en el [PR en borrador #1](https://github.com/fmarquezrojas-dev/Sistema-de-Gestion-de-proyectos-y-tareas-/pull/1). No se publicaron tags, releases ni imágenes; main permanece sin cambios. Licencia y autoría existentes conservadas.

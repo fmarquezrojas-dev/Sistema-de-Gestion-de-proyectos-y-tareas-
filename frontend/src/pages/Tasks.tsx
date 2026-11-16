@@ -1,5 +1,8 @@
-import { useEffect, useState, useRef, useMemo } from "react";
-import { useAuth } from "../context/AuthContext";
+import { mergeTasks } from '../services/taskState';
+import { useTaskStatus } from '../hooks/useTaskStatus';
+import { errorMessage } from '../services/errors';
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { useAuth } from "../context/authState";
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import KanbanBoard from "../components/KanbanBoard";
@@ -63,6 +66,7 @@ const Tasks = () => {
   const { user } = useAuth()
 
   const [tasks, setTasks]     = useState<Task[]>([]);
+  const { changeStatus: handleStatusChange, checkTask, mutationError, pendingIds, readRevision, hasPending } = useTaskStatus(tasks, setTasks);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
 
@@ -85,39 +89,26 @@ const Tasks = () => {
     return () => { if (clockRef.current) clearInterval(clockRef.current); };
   }, []);
 
-  const fetchTasks = async (silent = false) => {
-    if (!silent) setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get("/tasks/my-tasks");
+  const fetchSequence = useRef(0);
+  const fetchTasks = useCallback(() => {
+    const sequence = ++fetchSequence.current;
+    const before = readRevision();
+    return api.get("/tasks/my-tasks").then(res => {
       const raw = res.data?.data ?? res.data;
-      setTasks(Array.isArray(raw) ? raw : []);
-    } catch (err: any) {
-      setError(err?.response?.data?.error || "Error al cargar tareas");
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  };
+      setError(null);
+      if (sequence === fetchSequence.current && !hasPending() && before === readRevision())
+        setTasks(current => mergeTasks(current, Array.isArray(raw) ? raw : []));
+    }).catch((err: unknown) => setError(errorMessage(err, "Error al cargar tareas")))
+      .finally(() => setLoading(false));
+  }, [readRevision, hasPending]);
 
-  useEffect(() => { fetchTasks(); }, []);
+  useEffect(() => { void fetchTasks(); }, [fetchTasks]);
   useEffect(() => {
-    const t = setInterval(() => fetchTasks(true), 60_000);
-    return () => clearInterval(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleStatusChange = async (taskId: number, status: string) => {
-    // Optimistic update
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: status as any } : t));
-    try {
-      await api.put(`/tasks/${taskId}`, { status });
-      fetchTasks(true);
-    } catch {
-      // Revert en error
-      fetchTasks(true);
-      throw new Error("Error al actualizar estado");
-    }
-  };
+    const t = setInterval(() => fetchTasks(), 60_000);
+    const refresh = () => { void fetchTasks(); };
+    window.addEventListener('focus', refresh);
+    return () => { clearInterval(t); window.removeEventListener('focus', refresh); };
+  }, [fetchTasks]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
@@ -125,7 +116,7 @@ const Tasks = () => {
       if (filterStatus   && task.status   !== filterStatus)   return false;
       if (searchText) {
         const q = searchText.toLowerCase();
-        if (!task.title.toLowerCase().includes(q) && !(task as any).project?.name?.toLowerCase().includes(q)) return false;
+        if (!task.title.toLowerCase().includes(q) && !task.project?.name?.toLowerCase().includes(q)) return false;
       }
       return true;
     });
@@ -135,7 +126,7 @@ const Tasks = () => {
   const inProgressCount = tasks.filter(t => t.status === "IN_PROGRESS").length;
   const completedCount  = tasks.filter(t => t.status === "COMPLETED").length;
   const overdueCount    = useMemo(() =>
-    tasks.filter(t => getDueDateInfo((t as any).dueDate, t.status, now)?.isOverdue ?? false).length,
+    tasks.filter(t => getDueDateInfo(t.dueDate, t.status, now)?.isOverdue ?? false).length,
   [tasks, now]);
 
   const groups = useMemo(() => {
@@ -148,7 +139,7 @@ const Tasks = () => {
   const hasActiveFilters = filterPriority || filterStatus || searchText;
 
   const renderTask = (task: Task) => {
-    const dueDate = (task as any).dueDate as string | undefined;
+    const dueDate = task.dueDate;
     const info    = getDueDateInfo(dueDate, task.status, now);
     const isRecent = info?.isOverdue && dueDate ? Math.abs(minutesLeft(dueDate, now)) < 60 : false;
 
@@ -191,9 +182,9 @@ const Tasks = () => {
             </div>
             {task.description && <p style={styles.taskDesc}>{task.description}</p>}
             <div style={styles.taskMeta}>
-              {(task as any).project && (
-                <Link to={`/projects/${(task as any).project.id}`} style={styles.projectLink} title="Ver proyecto">
-                  📁 {(task as any).project.name}
+              {task.project && (
+                <Link to={`/projects/${task.project.id}`} style={styles.projectLink} title="Ver proyecto">
+                  📁 {task.project.name}
                 </Link>
               )}
               {dueDate && info && task.status !== "COMPLETED" && (
@@ -214,7 +205,9 @@ const Tasks = () => {
           <select
             style={{ ...styles.statusSelect, background: statusColor[task.status], color: statusTextColor[task.status] }}
             value={task.status}
-            onChange={e => handleStatusChange(task.id, e.target.value)}
+            disabled={!task.canEdit || task.uncertain || pendingIds.has(task.id)}
+            aria-label={`Estado de ${task.title}`}
+            onChange={e => handleStatusChange(task.id, e.target.value as Task["status"])}
           >
             <option value="PENDING">{statusLabel.PENDING}</option>
             <option value="IN_PROGRESS">{statusLabel.IN_PROGRESS}</option>
@@ -252,7 +245,7 @@ const Tasks = () => {
           <TaskComments
             taskId={task.id}
             currentUser={user ? { id: user.id, name: user.name } : null}
-            readOnly={false}
+            canModerate={task.canModerateComments}
           />
         )}
       </div>
@@ -361,6 +354,9 @@ const Tasks = () => {
           </div>
         )}
 
+        {tasks.filter(t => t.uncertain).map(t => <button key={t.id} onClick={() => { void checkTask(t.id); }}>Comprobar {t.title}</button>)}
+        {pendingIds.size > 0 && <p role="status">Guardando tareas...</p>}
+        {mutationError && <p role="alert" style={{ color: "#dc2626" }}>{mutationError}</p>}
         {!loading && error && (
           <div style={{ ...styles.emptyState, background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.3)" }}>
             <p style={{ fontSize: "2rem" }}>❌</p>
@@ -392,7 +388,7 @@ const Tasks = () => {
             {/* ── Vista Kanban ── */}
             {view === "kanban" && (
               <KanbanBoard
-                tasks={filteredTasks}
+                tasks={filteredTasks.map(task => ({ ...task, canEdit: task.canEdit && !task.uncertain && !pendingIds.has(task.id) }))}
                 onStatusChange={handleStatusChange}
                 now={now}
               />

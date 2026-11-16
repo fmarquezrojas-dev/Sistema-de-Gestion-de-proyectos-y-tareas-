@@ -1,6 +1,7 @@
+import { errorMessage } from "../services/errors";
 import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/authState";
 import { useApi } from "../hooks/useApi";
 import Navbar from "../components/Navbar";
 import api from "../services/api";
@@ -50,8 +51,8 @@ const CreateModal = ({ onClose, onCreate }: {
       await api.post("/projects", form);
       onCreate();
       onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Error al crear proyecto");
+    } catch (err) {
+      setError(errorMessage(err, "Error al crear proyecto"));
     } finally {
       setCreating(false);
     }
@@ -148,16 +149,16 @@ const CreateModal = ({ onClose, onCreate }: {
 const ProjectCard = ({ project, userId, view }: {
   project: Project; userId?: number; view: "grid" | "list";
 }) => {
-  const tasks     = (project as any).tasks || [];
+  const tasks     = project.tasks || [];
   const total     = tasks.length;
-  const completed = tasks.filter((t: any) => t.status === "COMPLETED").length;
-  const overdue   = tasks.filter((t: any) =>
+  const completed = tasks.filter((t) => t.status === "COMPLETED").length;
+  const overdue   = tasks.filter((t) =>
     t.status !== "COMPLETED" && t.dueDate && new Date(t.dueDate) < new Date()
   ).length;
   const progress  = total > 0 ? Math.round((completed / total) * 100) : 0;
   const pc        = getProgressColor(progress);
 
-  const myMember  = project.members?.find((m: any) => m.userId === userId);
+  const myMember  = project.members?.find((m) => m.userId === userId);
   const isOwner   = myMember?.role === "OWNER";
 
   // Avatares apilados de miembros
@@ -213,7 +214,7 @@ const ProjectCard = ({ project, userId, view }: {
                 🔴 {overdue} vencida{overdue > 1 ? "s" : ""}
               </span>
             )}
-            <span style={{ fontSize: "0.78rem", color: "#94a3b8" }}>{timeAgo((project as any).updatedAt || project.createdAt)}</span>
+            <span style={{ fontSize: "0.78rem", color: "#94a3b8" }}>{timeAgo(project.updatedAt || project.createdAt)}</span>
           </div>
         </div>
       </Link>
@@ -298,7 +299,7 @@ const ProjectCard = ({ project, userId, view }: {
         {/* Avatares apilados */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <div style={{ display: "flex" }}>
-            {visibleMembers.map((m: any, i: number) => (
+            {visibleMembers.map((m, i) => (
               <div key={m.userId} style={{
                 width: "26px", height: "26px", borderRadius: "50%",
                 background: m.user?.avatarColor || "#4f46e5",
@@ -328,7 +329,7 @@ const ProjectCard = ({ project, userId, view }: {
         </div>
 
         <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
-          🕐 {timeAgo((project as any).updatedAt || project.createdAt)}
+          🕐 {timeAgo(project.updatedAt || project.createdAt)}
         </span>
       </div>
     </Link>
@@ -351,24 +352,24 @@ const Projects = () => {
 
   // ── Filtrado + ordenación ──────────────────────────────────────────────────
   const processed = useMemo(() => {
-    let list = (projects || []) as any[];
+    let list = (projects || []);
 
     // Búsqueda
     if (searchText) {
       const q = searchText.toLowerCase();
-      list = list.filter((p: any) =>
+      list = list.filter((p: Project) =>
         p.name.toLowerCase().includes(q) ||
         p.description?.toLowerCase().includes(q)
       );
     }
 
     // Filtro estado
-    if (filterStatus) list = list.filter((p: any) => p.status === filterStatus);
+    if (filterStatus) list = list.filter((p: Project) => p.status === filterStatus);
 
     // Filtro rol
     if (filterRole) {
-      list = list.filter((p: any) => {
-        const m = p.members?.find((m: any) => m.userId === user?.id);
+      list = list.filter((p: Project) => {
+        const m = p.members?.find((m) => m.userId === user?.id);
         return filterRole === "owner" ? m?.role === "OWNER" : m?.role !== "OWNER";
       });
     }
@@ -377,10 +378,10 @@ const Projects = () => {
     list = [...list].sort((a, b) => {
       if (sortBy === "name")    return a.name.localeCompare(b.name);
       if (sortBy === "progress") {
-        const getP = (p: any) => {
+        const getP = (p: Project) => {
           const tasks = p.tasks || [];
           if (!tasks.length) return -1;
-          return tasks.filter((t: any) => t.status === "COMPLETED").length / tasks.length;
+          return tasks.filter((t) => t.status === "COMPLETED").length / tasks.length;
         };
         return getP(b) - getP(a);
       }
@@ -392,7 +393,7 @@ const Projects = () => {
   }, [projects, searchText, filterStatus, filterRole, sortBy, user?.id]);
 
   // Contadores para tabs
-  const totalOwned  = (projects || []).filter((p: any) => p.members?.find((m: any) => m.userId === user?.id)?.role === "OWNER").length;
+  const totalOwned  = (projects || []).filter((p: Project) => p.members?.find((m) => m.userId === user?.id)?.role === "OWNER").length;
   const totalMember = (projects || []).length - totalOwned;
 
   const hasFilters = searchText || filterStatus || filterRole;
@@ -458,7 +459,7 @@ const Projects = () => {
           </select>
 
           {/* Ordenación */}
-          <select style={S.select} value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
+          <select style={S.select} value={sortBy} onChange={e => setSortBy(e.target.value as "recent" | "name" | "progress")}>
             <option value="recent">🕐 Más recientes</option>
             <option value="name">🔤 Nombre A-Z</option>
             <option value="progress">📊 Progreso</option>

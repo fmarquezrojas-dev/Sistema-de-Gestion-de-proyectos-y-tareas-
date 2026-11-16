@@ -1,3 +1,5 @@
+import { validate } from '../middlewares/validate'
+import { commentBody, validateId } from '../middlewares/resourceValidation'
 import { Router } from 'express'
 import { authenticate } from '../middlewares/authMiddleware'
 import { getComments, createComment, deleteComment } from '../controllers/comment.controller'
@@ -5,10 +7,7 @@ import { getComments, createComment, deleteComment } from '../controllers/commen
 const router = Router({ mergeParams: true }) // para acceder a :taskId
 
 router.get('/',             authenticate, getComments)
-router.post('/',            authenticate, createComment)
-router.delete('/:commentId', authenticate, deleteComment)
+router.post('/',            authenticate, validate(commentBody), createComment)
+router.delete('/:commentId', authenticate, validateId, deleteComment)
 
 export default router
-
-// En tu app.ts/server.ts:
-// app.use('/api/tasks/:taskId/comments', commentRouter)

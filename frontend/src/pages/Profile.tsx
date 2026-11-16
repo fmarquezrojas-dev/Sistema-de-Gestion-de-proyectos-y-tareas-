@@ -1,23 +1,9 @@
-/**
- * Profile.tsx
- *
- * FIXES:
- *  1. Bug avatar en carga inicial: se hace un GET /auth/me al montar para
- *     obtener avatarColor y avatarUrl actualizados (sin depender solo del token).
- *  2. Foto de perfil: el usuario puede subir una imagen que se convierte a
- *     base64 y se envía junto con el resto de datos del perfil.
- *
- * BACKEND necesario:
- *  - Agregar `avatarUrl String?` al modelo User en schema.prisma
- *  - Correr `npx prisma migrate dev`
- *  - El endpoint PUT /auth/profile debe aceptar y guardar `avatarUrl`
- *  - El endpoint GET /auth/me (o el que uses para obtener el usuario actual)
- *    debe devolver `avatarUrl` y `avatarColor`
- */
+import { errorMessage } from '../services/errors'
+
 
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/authState'
 import Navbar from '../components/Navbar'
 import api from '../services/api'
 
@@ -30,7 +16,7 @@ const AVATAR_COLORS = [
 const MAX_FILE_SIZE_MB = 2
 
 const Profile = () => {
-  const { user, updateUser } = useAuth()
+  const { user, updateUser, changePassword } = useAuth()
   const navigate             = useNavigate()
 
   const [activeTab, setActiveTab] = useState<'info' | 'password' | 'danger'>('info')
@@ -71,13 +57,13 @@ const Profile = () => {
   }
 
   // ── ✅ FIX: Fetch del perfil real al montar ───────────────────────────────
-  // El token/localStorage puede NO incluir avatarColor ni avatarUrl.
+  // El perfil se obtiene del servidor; no se persiste en almacenamiento web.
   // Hacemos un GET al montar para obtener los datos actualizados del servidor.
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        // Ajusta la ruta a la que uses para obtener el usuario autenticado
-        const res = await api.get('/auth/me') // o /auth/profile
+        // Perfil autenticado con sesión vigente.
+        const res = await api.get('/auth/me')
         const u   = res.data?.data ?? res.data
         if (u) {
           setInfoForm({ name: u.name || '', email: u.email || '' })
@@ -90,7 +76,7 @@ const Profile = () => {
         // Si falla el fetch, caemos de vuelta al user del contexto
         setInfoForm({ name: user?.name || '', email: user?.email || '' })
         setAvatarColor(user?.avatarColor || '#4f46e5')
-        setAvatarUrl((user as any)?.avatarUrl || null)
+        setAvatarUrl(user?.avatarUrl || null)
       }
     }
 
@@ -134,7 +120,7 @@ const Profile = () => {
     e.preventDefault()
     setSavingInfo(true)
     try {
-      const payload: any = {
+      const payload: { name: string; email: string; avatarColor: string; avatarUrl?: string | null } = {
         name:        infoForm.name,
         email:       infoForm.email,
         avatarColor: avatarColor,
@@ -165,8 +151,8 @@ const Profile = () => {
       })
 
       showToast('Perfil actualizado correctamente.')
-    } catch (err: any) {
-      showToast(err.response?.data?.error || 'Error al actualizar perfil', 'error')
+    } catch (err) {
+      showToast(errorMessage(err, 'Error al actualizar perfil'), 'error')
     } finally {
       setSavingInfo(false)
     }
@@ -178,20 +164,17 @@ const Profile = () => {
     if (passForm.newPassword !== passForm.confirmPassword) {
       showToast('Las contraseñas no coinciden.', 'error'); return
     }
-    if (passForm.newPassword.length < 6) {
-      showToast('La contraseña debe tener al menos 6 caracteres.', 'error'); return
+    if (passForm.newPassword.length < 8) {
+      showToast('La contraseña debe tener al menos 8 caracteres.', 'error'); return
     }
     setSavingPass(true)
     try {
-      await api.put('/auth/password', {
-        currentPassword: passForm.currentPassword,
-        newPassword:     passForm.newPassword,
-      })
-      showToast('Contraseña actualizada correctamente.')
+      await changePassword(passForm.currentPassword, passForm.newPassword)
+      navigate('/login')
       setPassForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
       setPassMatch(null)
-    } catch (err: any) {
-      showToast(err.response?.data?.error || 'Error al cambiar contraseña', 'error')
+    } catch (err) {
+      showToast(errorMessage(err, 'Error al cambiar contraseña'), 'error')
     } finally {
       setSavingPass(false)
     }
@@ -206,8 +189,8 @@ const Profile = () => {
       await api.delete('/auth/account', { data: { password: deletePassword } })
       await logout()
       navigate('/login')
-    } catch (err: any) {
-      showToast(err.response?.data?.error || 'Error al eliminar cuenta', 'error')
+    } catch (err) {
+      showToast(errorMessage(err, 'Error al eliminar cuenta'), 'error')
     } finally {
       setDeleting(false)
     }
@@ -467,7 +450,7 @@ const Profile = () => {
             {activeTab === 'password' && (
               <div style={styles.formCard}>
                 <h3 style={styles.formTitle}>Cambiar contraseña</h3>
-                <p style={styles.formSubtitle}>Usa una contraseña segura de al menos 6 caracteres.</p>
+                <p style={styles.formSubtitle}>Usa una contraseña segura de al menos 8 caracteres.</p>
                 <form onSubmit={handleChangePassword}>
                   <div style={styles.field}>
                     <label style={styles.label}>Contraseña actual</label>

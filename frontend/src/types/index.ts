@@ -9,9 +9,10 @@ export interface User {
 }
 
 export interface Project {
+  tasks?: Task[];
   id: number;
   name: string;
-  description?: string;
+  description?: string | null;
   status: "ACTIVE" | "PAUSED" | "COMPLETED";
   createdAt: string;
   updatedAt: string;
@@ -28,16 +29,24 @@ export interface ProjectMember {
   user: User;
 }
 
+export type TaskMutation = TaskUpdate & { expectedVersion: number };
+export type TaskUpdate = Partial<Pick<Task, 'title' | 'description' | 'priority' | 'status' | 'dueDate' | 'assigneeId'>>;
 export interface Task {
+  version: number;
+  saving?: boolean;
+  uncertain?: boolean;
+  project?: { id: number; name: string };
+  canEdit?: boolean;
+  canModerateComments?: boolean;
   id: number;
   title: string;
-  description?: string;
+  description?: string | null;
   priority: "LOW" | "MEDIUM" | "HIGH";
   status: "PENDING" | "IN_PROGRESS" | "COMPLETED";
-  dueDate?: string;
+  dueDate?: string | null;
   projectId: number;
-  assigneeId?: number;
-  assignee?: User;
+  assigneeId?: number | null;
+  assignee?: User | null;
   createdAt: string;
   updatedAt: string; // 👈 Clave para mostrar "Editado hace..."
 }

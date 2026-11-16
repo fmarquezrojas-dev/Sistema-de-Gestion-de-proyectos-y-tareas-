@@ -1,17 +1,13 @@
-# 1. Usar Node 22 para evitar el error de "esbuild" que da la versión 18 en Vite
-FROM node:22-alpine
-
+FROM node:22-alpine AS build
 WORKDIR /app
-
-# 2. Copiar solo lo necesario para instalar dependencias (optimiza el cache)
 COPY package*.json ./
-RUN npm install
-
-# 3. Copiar el resto del código del frontend
+RUN npm ci
 COPY . .
-
-# 4. Puerto por defecto de Vite
+ARG VITE_API_URL=http://localhost:3000/api
+ENV VITE_API_URL=$VITE_API_URL
+RUN npm run build
+FROM nginx:1.28-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 5173
-
-# 5. El flag --host es fundamental para que Docker mapee el puerto al localhost de Windows
-CMD ["npm", "run", "dev", "--", "--host"]
+HEALTHCHECK --interval=10s --timeout=3s CMD wget -q -O /dev/null http://127.0.0.1:5173/

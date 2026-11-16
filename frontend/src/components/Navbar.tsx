@@ -11,8 +11,8 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
-import { useTheme } from '../context/ThemeContext'
+import { useAuth } from '../context/authState'
+import { useTheme } from '../context/themeState'
 
 // Ícono de menú hamburguesa (SVG inline)
 const MenuIcon = () => (
@@ -75,7 +75,7 @@ const Navbar = () => {
         </Link>
 
         {/* ── Links centrales (desktop) ── */}
-        <div style={styles.navCenter}>
+        <div className="nav-center" style={styles.navCenter}>
           {NAV_LINKS.map(link => {
             const active = isActive(link.to)
             return (
@@ -96,7 +96,7 @@ const Navbar = () => {
         <div style={styles.navRight}>
 
           {/* Nombre del usuario (solo desktop) */}
-          <span style={styles.userName}>{user?.name?.split(' ')[0] || ''}</span>
+          <span className="nav-username" style={styles.userName}>{user?.name?.split(' ')[0] || ''}</span>
 
           {/* ── Toggle modo oscuro ── */}
           <button
@@ -230,6 +230,9 @@ const Navbar = () => {
           {/* Hamburger (mobile) */}
           <button
             onClick={() => setMobileOpen(o => !o)}
+            className="hamburger-btn"
+            aria-label="Menú de navegación"
+            aria-expanded={mobileOpen}
             style={styles.hamburger}
           >
             <MenuIcon />
@@ -265,12 +268,12 @@ const Navbar = () => {
       )}
 
       <style>{`
-        @media (max-width: 768px) {
+        @media (max-width: 1000px) {
           .nav-center { display: none !important; }
           .nav-username { display: none !important; }
           .hamburger-btn { display: flex !important; }
         }
-        @media (min-width: 769px) {
+        @media (min-width: 1001px) {
           .hamburger-btn { display: none !important; }
         }
       `}</style>

@@ -1,13 +1,3 @@
 @echo off
-title Detener Proyecto - Sistema Gestion
-echo ==========================================
-echo   DETENIENDO CONTENEDORES...
-echo ==========================================
-
-:: Detiene los contenedores pero mantiene los datos de la DB
-docker compose stop
-
-echo ==========================================
-echo   PROYECTO DETENIDO CORRECTAMENTE
-echo ==========================================
-pause
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\synkro.ps1" -Accion Detener %*
+exit /b %ERRORLEVEL%

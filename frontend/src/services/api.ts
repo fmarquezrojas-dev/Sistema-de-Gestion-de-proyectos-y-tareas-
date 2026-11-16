@@ -1,51 +1,32 @@
-import axios from 'axios'
-
-const api = axios.create({
-  // ✅ Asegúrate de que el puerto coincida con tu backend (4000 o 3000)
-  baseURL: 'http://localhost:3000/api', 
-  withCredentials: true
-})
-
-// Interceptor de Petición: Añade el token dinámicamente
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
+import type { TaskUpdate, TaskMutation } from '../types'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
+import { apiURL } from './http'
+import { currentAccessToken, refreshAccess } from './authSession'
+interface RetryConfig extends InternalAxiosRequestConfig { _retry?: boolean; _sentToken?: string | null }
+const api = axios.create({ baseURL: apiURL, withCredentials: true })
+api.interceptors.request.use((config: RetryConfig) => {
+  const token = currentAccessToken()
+  config._sentToken = token
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  else delete config.headers.Authorization
   return config
 })
-
-// Interceptor de Respuesta: Maneja Refresh Token y errores 401
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const original = error.config
-    if (error.response?.status === 401 && !original._retry) {
-      original._retry = true
-      try {
-        const res = await axios.post(
-          'http://localhost:3000/api/auth/refresh',
-          {},
-          { withCredentials: true }
-        )
-        const newToken = res.data.data.accessToken
-        localStorage.setItem('accessToken', newToken)
-        
-        if (original.headers) {
-          original.headers.Authorization = `Bearer ${newToken}`
-        }
-        
-        return api(original)
-      } catch (refreshError) {
-        localStorage.removeItem('accessToken')
-        localStorage.removeItem('user') // 👈 Añadido: Limpia también el usuario
-        window.location.href = '/login'
-        return Promise.reject(refreshError)
-      }
-    }
-    return Promise.reject(error)
+api.interceptors.response.use(response => response, async (error: unknown) => {
+  if (!axios.isAxiosError<{ code?: string }>(error)) return Promise.reject(error)
+  const original = error.config as RetryConfig | undefined
+  if (error.response?.status === 403 || (error.response?.status === 404 && original?.method !== 'get')) {
+    window.dispatchEvent(new Event('synkro:access-changed'))
   }
-)
+  const excluded = /\/auth\/(login|register|refresh|logout|password|account)(?:$|\?)/.test(original?.url || '')
+  // SESSION_INVALID solo se emite antes de ejecutar el controlador de negocio.
+  if (original && !excluded && !original._retry && error.response?.status === 401 && error.response.data.code === 'SESSION_INVALID') {
+    original._retry = true
+    const current = currentAccessToken()
+    if (!current || current === original._sentToken) await refreshAccess(original._sentToken || null)
+    return api(original)
+  }
+  return Promise.reject(error)
+})
 
 /**
  * SERVICIOS ORGANIZADOS 
@@ -83,11 +64,11 @@ export const taskService = {
     const { data } = await api.get('/tasks/my-tasks')
     return data
   },
-  create: async (projectId: number, taskData: any) => {
+  create: async (projectId: number, taskData: TaskUpdate) => {
     const { data } = await api.post(`/tasks/project/${projectId}`, taskData)
     return data
   },
-  update: async (taskId: number, taskData: any) => {
+  update: async (taskId: number, taskData: TaskMutation) => {
     const { data } = await api.put(`/tasks/${taskId}`, taskData)
     return data
   }

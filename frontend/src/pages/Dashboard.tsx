@@ -1,6 +1,7 @@
+import type { Project, Task } from "../types";
 import { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/authState";
 import Navbar from "../components/Navbar";
 import api from "../services/api";
 
@@ -29,10 +30,10 @@ interface DashboardData {
     inProgressTasks?: number;
     overdueTasks: number;
   };
-  activeProjects: any[];
-  myPendingTasks: any[];
-  overdueTasks: any[];
-  upcomingTasks: any[];
+  activeProjects: Project[];
+  myPendingTasks: Task[];
+  overdueTasks: Task[];
+  upcomingTasks: Task[];
   recentActivity: ActivityItem[];
 }
 
@@ -612,37 +613,26 @@ const Dashboard = () => {
     return () => clearInterval(tick);
   }, []);
 
-  const fetchDashboard = useCallback(
-    async (silent = false) => {
-      if (!silent) setLoading(true);
-      try {
-        const res = await api.get("/dashboard");
-        setData(res.data?.data || res.data);
-      } catch {
-        navigate("/login");
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [navigate],
-  );
+  const fetchDashboard = useCallback(() => api.get("/dashboard").then(res => {
+    setData(res.data?.data || res.data);
+  }).catch(() => navigate("/login")).finally(() => setLoading(false)), [navigate]);
 
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
 
   useEffect(() => {
-    intervalRef.current = setInterval(() => fetchDashboard(true), 60_000);
+    intervalRef.current = setInterval(() => fetchDashboard(), 60_000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [fetchDashboard]);
 
-  const getProgress = (project: any) => {
+  const getProgress = (project: Project) => {
     const tasks = project.tasks || [];
     if (!tasks.length) return 0;
     return Math.round(
-      (tasks.filter((t: any) => t.status === "COMPLETED").length /
+      (tasks.filter((t) => t.status === "COMPLETED").length /
         tasks.length) *
         100,
     );
@@ -660,9 +650,9 @@ const Dashboard = () => {
     if (!data) return 0;
     const serverCount =
       data.summary?.overdueTasks ?? data.overdueTasks?.length ?? 0;
-    const serverIds = new Set((data.overdueTasks ?? []).map((t: any) => t.id));
+    const serverIds = new Set((data.overdueTasks ?? []).map((t) => t.id));
     const sessionNew = (data.upcomingTasks ?? []).filter(
-      (t: any) =>
+      (t) =>
         t.dueDate &&
         t.status !== "COMPLETED" &&
         !serverIds.has(t.id) &&
@@ -674,12 +664,12 @@ const Dashboard = () => {
   const criticalAlerts = useMemo(() => {
     if (!data) return [];
     const all = [...(data.myPendingTasks ?? []), ...(data.overdueTasks ?? [])];
-    const seen = new Set<string>();
-    return all.filter((t: any) => {
+    const seen = new Set<number>();
+    return all.filter((t) => {
       if (seen.has(t.id) || !t.dueDate || t.status === "COMPLETED")
         return false;
       seen.add(t.id);
-      const mins = getMinutesLeft(t.dueDate);
+      const mins = Math.floor((new Date(t.dueDate!).getTime() - now.getTime()) / 60000);
       return mins < 0 || mins <= 60;
     });
   }, [data, now]);
@@ -687,9 +677,9 @@ const Dashboard = () => {
   const allOverdueTasks = useMemo(() => {
     if (!data) return [];
     const serverOverdue = data.overdueTasks ?? [];
-    const serverIds = new Set(serverOverdue.map((t: any) => t.id));
+    const serverIds = new Set(serverOverdue.map((t) => t.id));
     const sessionNew = (data.upcomingTasks ?? []).filter(
-      (t: any) =>
+      (t) =>
         t.dueDate &&
         t.status !== "COMPLETED" &&
         !serverIds.has(t.id) &&
@@ -850,8 +840,8 @@ const Dashboard = () => {
                 {criticalAlerts.length > 1 ? "s" : ""}
               </p>
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                {criticalAlerts.map((t: any) => {
-                  const mins = getMinutesLeft(t.dueDate);
+                {criticalAlerts.map((t) => {
+                  const mins = Math.floor((new Date(t.dueDate!).getTime() - now.getTime()) / 60000);
                   return (
                     <span
                       key={t.id}
@@ -1068,7 +1058,7 @@ const Dashboard = () => {
                   gap: "0.6rem",
                 }}
               >
-                {data?.activeProjects?.map((project: any) => {
+                {data?.activeProjects?.map((project: Project) => {
                   const progress = getProgress(project);
                   const pc = getProgressColor(progress);
                   return (
@@ -1171,8 +1161,8 @@ const Dashboard = () => {
                     gap: "0.6rem",
                   }}
                 >
-                  {allOverdueTasks.map((task: any) => {
-                    const mins = getMinutesLeft(task.dueDate);
+                  {allOverdueTasks.map((task) => {
+                    const mins = getMinutesLeft(task.dueDate!);
                     const isJust = mins > -60 && mins < 0;
                     return (
                       <div
@@ -1333,8 +1323,8 @@ const Dashboard = () => {
                   gap: "0.55rem",
                 }}
               >
-                {data?.upcomingTasks?.map((task: any) => {
-                  const dueDate = task.dueDate || task.due_date;
+                {data?.upcomingTasks?.map((task) => {
+                  const dueDate = task.dueDate;
                   if (!dueDate) return null;
 
                   // ✅ FIX: getDayLabel compara calendarios, no Math.ceil de horas
@@ -1377,7 +1367,7 @@ const Dashboard = () => {
                           }}
                         >
                           {task.project?.name ??
-                            task.projectName ??
+                            task.project?.name ??
                             "Sin proyecto"}
                           {" · "}
                           {formatTime(dueDate)}
