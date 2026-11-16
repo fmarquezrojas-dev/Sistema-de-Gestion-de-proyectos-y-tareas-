@@ -1,8 +1,12 @@
+import { unassignTasks } from './taskHistory'
+export { login, changePassword, getProfile, refresh as refreshToken, logout } from './session.service'
+import { transaction } from './projectAccess'
+
 import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
+
 import prisma from '../utils/prismaClient'
 import { AppError } from '../middlewares/errorHandler'
-import { JwtPayload } from '../models/types'
+
 // ✅ Nuevas importaciones para Cloudinary
 import {
   uploadImageToCloudinary,
@@ -10,20 +14,7 @@ import {
   extractPublicId,
 } from '../utils/cloudinary'
 
-// ─── GENERACIÓN DE TOKENS ──────────────────────────────────────────────────
-const generateAccessToken = (payload: JwtPayload): string => {
-  return jwt.sign(payload, process.env.JWT_SECRET! as string, {
-    expiresIn: '15m'
-  } as jwt.SignOptions)
-}
-
-const generateRefreshToken = (payload: JwtPayload): string => {
-  return jwt.sign(payload, process.env.JWT_REFRESH_SECRET! as string, {
-    expiresIn: '7d'
-  } as jwt.SignOptions)
-}
-
-// ─── REGISTRO Y LOGIN ──────────────────────────────────────────────────────
+// Registro de usuarios; emisión y revocación en session.service.
 export const register = async (body: { name: string; email: string; password: string }) => {
   const existing = await prisma.user.findUnique({ where: { email: body.email } })
   if (existing) throw new AppError(409, 'El email ya está registrado')
@@ -50,43 +41,14 @@ export const register = async (body: { name: string; email: string; password: st
   return user
 }
 
-export const login = async (body: { email: string; password: string }) => {
-  const user = await prisma.user.findUnique({ where: { email: body.email } })
-  if (!user) throw new AppError(401, 'Credenciales inválidas')
-
-  const validPassword = await bcrypt.compare(body.password, user.password)
-  if (!validPassword) throw new AppError(401, 'Credenciales inválidas')
-
-  const payload: JwtPayload = {
-    userId: user.id,
-    email: user.email,
-    role: user.role
-  }
-
-  const accessToken = generateAccessToken(payload)
-  const refreshToken = generateRefreshToken(payload)
-
-  return {
-    accessToken,
-    refreshToken,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      createdAt: user.createdAt,
-      avatarColor: user.avatarColor,
-      avatarUrl: user.avatarUrl
-    }
-  }
-}
-
 // ─── FUNCIONES DE CLOUDINARY (NUEVAS) ──────────────────────────────────────
 
 /**
  * Sube una nueva imagen, elimina la anterior de la nube y actualiza la DB
  */
 export const updateAvatar = async (userId: number, imageData: Buffer | string) => {
+  if (![process.env.CLOUDINARY_CLOUD_NAME, process.env.CLOUDINARY_API_KEY, process.env.CLOUDINARY_API_SECRET].every(Boolean))
+    throw new AppError(503, "Avatares externos no configurados. Puedes usar tu color e inicial.");
   // 1. Obtener usuario actual para ver si ya tiene foto
   const currentUser = await prisma.user.findUnique({
     where: { id: userId },
@@ -185,38 +147,11 @@ export const updateProfile = async (
   })
 }
 
-export const changePassword = async (userId: number, body: { currentPassword: string; newPassword: string }) => {
-  const user = await prisma.user.findUnique({ where: { id: userId } })
-  if (!user) throw new AppError(404, 'Usuario no encontrado')
-
-  const valid = await bcrypt.compare(body.currentPassword, user.password)
-  if (!valid) throw new AppError(401, 'La contraseña actual es incorrecta')
-
-  const hashed = await bcrypt.hash(body.newPassword, 10)
-  await prisma.user.update({ where: { id: userId }, data: { password: hashed } })
-}
-
-export const refreshToken = async (token: string) => {
-  if (!token) throw new AppError(401, 'Refresh token no proporcionado')
-
-  try {
-    const payload = jwt.verify(token, process.env.JWT_REFRESH_SECRET!) as JwtPayload
-    const accessToken = generateAccessToken({
-      userId: payload.userId,
-      email: payload.email,
-      role: payload.role
-    })
-    return { accessToken }
-  } catch {
-    throw new AppError(401, 'Refresh token inválido o expirado')
-  }
-}
-
 export const getProfileStats = async (userId: number) => {
   const [totalProjects, pendingTasks] = await Promise.all([
     prisma.projectMember.count({ where: { userId } }),
     prisma.task.count({
-      where: { assigneeId: userId, status: { not: 'COMPLETED' } }
+      where: { assigneeId: userId, project: { members: { some: { userId } } }, status: { not: 'COMPLETED' } }
     })
   ])
   return { totalProjects, pendingTasks }
@@ -229,7 +164,14 @@ export const deleteAccount = async (userId: number, password: string) => {
   const valid = await bcrypt.compare(password, user.password)
   if (!valid) throw new AppError(401, 'Contraseña incorrecta')
 
-  await prisma.user.delete({ where: { id: userId } })
+  await transaction(async db => {
+    const owned = await db.projectMember.count({ where: { userId, role: 'OWNER' } })
+    if (owned) throw new AppError(409, 'No puedes borrar tu cuenta mientras seas propietario de proyectos. Conserva la cuenta o elimina explícitamente los proyectos que ya no necesites')
+    await unassignTasks(db, userId, userId, 'ACCOUNT_DELETED')
+    // Adjuntos no tienen cascada hacia User; se retiran sus registros al borrar la cuenta.
+    await db.attachment.deleteMany({ where: { userId } })
+    await db.user.delete({ where: { id: userId } })
+  })
 }
 
 export const searchUsers = async (query: string, excludeUserId: number) => {

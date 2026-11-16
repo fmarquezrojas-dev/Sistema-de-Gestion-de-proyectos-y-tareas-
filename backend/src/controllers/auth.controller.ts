@@ -1,3 +1,5 @@
+import { setRefreshCookie, clearRefreshCookie } from '../middlewares/sessionSecurity'
+import { actorId } from '../middlewares/authMiddleware'
 import { Request, Response, NextFunction } from "express";
 import * as authService from "../services/auth.service";
 import { AppError } from "../middlewares/errorHandler";
@@ -22,12 +24,7 @@ export const login = async (
 ) => {
   try {
     const result = await authService.login(req.body);
-    res.cookie("refreshToken", result.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    setRefreshCookie(res, result.refreshToken, result.expiresAt);
     res.json({ data: { accessToken: result.accessToken, user: result.user } });
   } catch (err) {
     next(err);
@@ -40,7 +37,7 @@ export const getProfileStats = async (
   next: NextFunction,
 ) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = actorId(req);
     const result = await authService.getProfileStats(userId);
     res.json({ data: result });
   } catch (err) {
@@ -56,15 +53,23 @@ export const refreshToken = async (
   try {
     const token = req.cookies?.refreshToken;
     const result = await authService.refreshToken(token);
+    setRefreshCookie(res, result.refreshToken, result.expiresAt);
     res.json({ data: { accessToken: result.accessToken } });
   } catch (err) {
+    if (err instanceof AppError && err.statusCode === 401) clearRefreshCookie(res);
     next(err);
   }
 };
 
-export const logout = (req: Request, res: Response) => {
-  res.clearCookie("refreshToken");
-  res.json({ data: null, message: "Sesión cerrada correctamente" });
+export const logout = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await authService.logout(req.cookies?.refreshToken);
+    clearRefreshCookie(res);
+    res.json({ data: null, message: 'Sesión cerrada correctamente' });
+  } catch (error) { next(error) }
+};
+export const getProfile = async (req: Request, res: Response) => {
+  res.json({ data: await authService.getProfile(actorId(req)) });
 };
 
 // --- GESTIÓN DE AVATAR (CLOUDINARY) ---
@@ -75,7 +80,7 @@ export const logout = (req: Request, res: Response) => {
  */
 export const updateAvatarController = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = actorId(req);
     
     // El archivo viene en req.file gracias al middleware de Multer
     if (!req.file) {
@@ -99,7 +104,7 @@ export const updateAvatarController = async (req: Request, res: Response, next: 
  */
 export const removeAvatarController = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = actorId(req);
     const result = await authService.removeAvatar(userId);
 
     res.json({
@@ -117,7 +122,7 @@ export const updateProfile = async (
   next: NextFunction,
 ) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = actorId(req);
     const { name, email, avatarColor, avatarUrl } = req.body;
 
     let finalAvatarUrl = avatarUrl;
@@ -154,9 +159,10 @@ export const changePassword = async (
   next: NextFunction,
 ) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = actorId(req);
     await authService.changePassword(userId, req.body);
-    res.json({ data: null, message: "Contraseña actualizada correctamente" });
+    clearRefreshCookie(res);
+    res.json({ data: null, message: "Contraseña actualizada. Inicia sesión nuevamente" });
   } catch (err) {
     next(err);
   }
@@ -164,9 +170,9 @@ export const changePassword = async (
 
 export const deleteAccount = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const userId = (req as any).user.userId
+    const userId = actorId(req)
     await authService.deleteAccount(userId, req.body.password)
-    res.clearCookie('refreshToken')
+    clearRefreshCookie(res)
     res.json({ data: null, message: 'Cuenta eliminada correctamente' })
   } catch (err) { next(err) }
 };
@@ -174,7 +180,7 @@ export const deleteAccount = async (req: Request, res: Response, next: NextFunct
 export const searchUsers = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { q } = req.query
-    const userId = (req as any).user.userId
+    const userId = actorId(req)
     const result = await authService.searchUsers(String(q || ''), userId)
     res.json({ data: result })
   } catch (err) { next(err) }

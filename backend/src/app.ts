@@ -1,3 +1,6 @@
+import internalRoutes from './routes/internal.routes'
+import prisma from './utils/prismaClient'
+import { authConfig } from './config/auth'
 import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
@@ -10,7 +13,14 @@ import dashboardRoutes from './routes/dashboard.routes'
 const app = express()
 
 // Middlewares globales
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }))
+app.set('trust proxy', false)
+app.use('/api/internal', internalRoutes)
+app.get('/health/live', (_req, res) => { res.json({ status: 'alive' }) })
+app.get('/health/ready', async (_req, res) => {
+  try { await prisma.$queryRaw`SELECT 1`; res.json({ status: 'ready' }) }
+  catch { res.status(503).json({ status: 'unavailable' }) }
+})
+app.use(cors({ origin: authConfig.origins, credentials: true }))
 
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ limit: '10mb', extended: true }))

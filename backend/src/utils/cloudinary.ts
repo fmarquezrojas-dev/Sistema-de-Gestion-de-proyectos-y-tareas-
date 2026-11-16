@@ -49,7 +49,7 @@ export const uploadImageToCloudinary = (
     if (typeof fileData === 'string') {
       cloudinary.uploader.upload(fileData, options, (error, result) => {
         if (error || !result) {
-          console.error('[Cloudinary] Error en upload (Base64):', error)
+          console.error('[Cloudinary] Operación no disponible')
           return reject(error ?? new Error('Upload fallido'))
         }
         resolve(result.secure_url)
@@ -60,7 +60,7 @@ export const uploadImageToCloudinary = (
       cloudinary.uploader
         .upload_stream(options, (error, result) => {
           if (error || !result) {
-            console.error('[Cloudinary] Error en upload_stream (Buffer):', error)
+            console.error('[Cloudinary] Operación no disponible')
             return reject(error ?? new Error('Upload fallido'))
           }
           resolve(result.secure_url)
@@ -77,7 +77,7 @@ export const deleteImageFromCloudinary = async (publicId: string): Promise<void>
   try {
     await cloudinary.uploader.destroy(publicId)
   } catch (err) {
-    console.warn(`[Cloudinary] No se pudo eliminar ${publicId}:`, err)
+    console.warn('[Cloudinary] No se pudo eliminar el avatar externo')
   }
 }
 

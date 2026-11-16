@@ -20,6 +20,7 @@ model User {
   createdAt    DateTime        @default(now())
 
   // Relaciones existentes
+  sessions     AuthSession[]
   projects     ProjectMember[]
   tasks        Task[]          // Tareas asignadas a este usuario
 
@@ -68,6 +69,8 @@ model ProjectMember {
 // ── MODELOS DE TAREAS Y COLABORACIÓN ─────────────────────────────────────────
 
 model Task {
+  version     Int        @default(1)
+  assignmentVersion Int @default(0)
   id          Int        @id @default(autoincrement())
   title       String
   description String?
@@ -107,6 +110,11 @@ model Comment {
 }
 
 model ActivityLog {
+  previousVersion Int?
+  resultingVersion Int?
+  changes Json?
+  actorName String?
+  reason String?
   id          Int      @id @default(autoincrement())
   type        String   // TASK_CREATED, TASK_COMPLETED, etc.
   description String
@@ -128,6 +136,7 @@ model ActivityLog {
   taskId      Int?
   task        Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
+  @@index([taskId, createdAt, id])
   @@map("activity_logs")
 }
 
@@ -176,4 +185,62 @@ enum Priority {
   LOW
   MEDIUM
   HIGH
+}
+
+model AuthSession {
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        Int
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  revokeReason  String?
+  refreshTokens RefreshToken[]
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+model RefreshToken {
+  id          String      @id @default(uuid()) @db.Uuid
+  sessionId   String      @db.Uuid
+  session     AuthSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tokenHash   String      @unique @db.Char(64)
+  createdAt   DateTime    @default(now())
+  consumedAt  DateTime?
+
+  @@index([sessionId])
+  @@map("refresh_tokens")
+}
+
+model NotificationJob {
+  id String @id @default(uuid()) @db.Uuid
+  kind String
+  taskId Int
+  projectId Int
+  recipientId Int
+  assignmentVersion Int?
+  dueDate DateTime?
+  dedupeKey String @unique
+  status String @default("pending")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  claimToken String? @db.Uuid
+  leaseUntil DateTime?
+  sendingAt DateTime?
+  acceptedAt DateTime?
+  result String?
+  diagnostic String?
+  resolutionReason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, nextAttemptAt, id])
+  @@map("notification_jobs")
+}
+
+model DemoSeed {
+  id String @id
+  createdAt DateTime @default(now())
+  @@map("demo_seeds")
 }

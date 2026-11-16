@@ -1,3 +1,5 @@
+import { unassignTasks } from './taskHistory'
+import { requireMember, requireOwner, transaction } from './projectAccess';
 import prisma from "../utils/prismaClient";
 import { AppError } from "../middlewares/errorHandler";
 import { ProjectStatus } from "@prisma/client";
@@ -52,145 +54,42 @@ export const getProjectById = async (projectId: number, userId: number) => {
   return project;
 };
 
-export const createProject = async (
-  userId: number,
-  body: { name: string; description?: string },
-) => {
-  return prisma.project.create({
-    data: {
-      name: body.name,
-      description: body.description,
-      members: {
-        create: { userId, role: "OWNER" },
-      },
-    },
-    include: {
-      members: {
-        include: { user: { select: { id: true, name: true, email: true } } },
-      },
-    },
-  });
-};
 
-export const updateProject = async (
-  projectId: number,
-  userId: number,
-  body: { name?: string; description?: string; status?: ProjectStatus },
-) => {
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, members: { some: { userId } } },
-  });
-
-  if (!project) throw new AppError(404, "Proyecto no encontrado");
-
-  return prisma.project.update({
-    where: { id: projectId },
-    data: body,
-  });
-};
-
-export const deleteProject = async (projectId: number, userId: number) => {
-  const member = await prisma.projectMember.findUnique({
-    where: { userId_projectId: { userId, projectId } },
-  });
-
-  if (!member) throw new AppError(404, "Proyecto no encontrado");
-  if (member.role !== "OWNER")
-    throw new AppError(403, "Solo el dueño puede eliminar el proyecto");
-
-  await prisma.project.delete({ where: { id: projectId } });
-};
-
-export const addMember = async (
-  projectId: number,
-  memberEmail: string,
-  userId: number,
-) => {
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, members: { some: { userId } } },
-  });
-
-  if (!project) throw new AppError(404, "Proyecto no encontrado");
-
-  const userToAdd = await prisma.user.findUnique({
-    where: { email: memberEmail },
-  });
-  if (!userToAdd) throw new AppError(404, "Usuario no encontrado");
-
-  const alreadyMember = await prisma.projectMember.findUnique({
-    where: { userId_projectId: { userId: userToAdd.id, projectId } },
-  });
-
-  if (alreadyMember)
-    throw new AppError(409, "El usuario ya es miembro del proyecto");
-
-  return prisma.projectMember.create({
-    data: {
-      userId: userToAdd.id,
-      projectId,
-      role: "MEMBER", // ← fix principal
-    },
-  });
-};
-
-export const removeMember = async (
-  projectId: number,
-  memberId: number,
-  userId: number,
-) => {
-  const requester = await prisma.projectMember.findUnique({
-    where: { userId_projectId: { userId, projectId } },
-  });
-
-  if (!requester) throw new AppError(404, "Proyecto no encontrado");
-
-  // ✅ Puede quitar si es Owner O si se está retirando a sí mismo
-  const isSelf = memberId === userId;
-  if (!isSelf && requester.role !== "OWNER") {
-    throw new AppError(403, "Solo el dueño puede quitar otros miembros");
-  }
-
-  // Owner no puede abandonar su propio proyecto
-  if (isSelf && requester.role === "OWNER") {
-    throw new AppError(
-      400,
-      "El dueño no puede abandonar el proyecto. Elimínalo si ya no lo necesitas.",
-    );
-  }
-
-  await prisma.projectMember.delete({
-    where: { userId_projectId: { userId: memberId, projectId } },
-  });
-};
-
-export const updateMemberPermissions = async (
-  projectId: number,
-  memberId: number,
-  adminId: number,
-  data: { canCreateTasks: boolean; canEditTasks: boolean }
-) => {
-  // 1. Validar que quien intenta cambiar permisos es el OWNER
-  const adminMember = await prisma.projectMember.findUnique({
-    where: {
-      userId_projectId: { userId: adminId, projectId }
-    }
+export const createProject = (userId: number, body: { name: string; description?: string | null }) => transaction(async db => {
+  const user = await db.user.findUnique({ where: { id: userId } })
+  if (!user) throw new AppError(401, 'La cuenta ya no existe')
+  return db.project.create({
+    data: { ...body, members: { create: { userId, role: 'OWNER' } } },
+    include: { members: { include: { user: { select: { id: true, name: true, email: true } } } } },
   })
-
-  if (!adminMember || adminMember.role !== 'OWNER') {
-    throw new AppError(403, 'Solo el propietario del proyecto puede modificar permisos.')
-  }
-
-  // 2. Ejecutar la actualización en la base de datos
-  return await prisma.projectMember.update({
-    where: {
-      userId_projectId: {
-        userId: memberId,
-        projectId: projectId,
-      },
-    },
-    data: {
-      canCreateTasks: data.canCreateTasks,
-      canEditTasks: data.canEditTasks,
-    },
-  })
-}
+})
+export const updateProject = (projectId: number, userId: number, body: { name?: string; description?: string | null; status?: ProjectStatus }) => transaction(async db => {
+  requireOwner(await requireMember(db, projectId, userId))
+  return db.project.update({ where: { id: projectId }, data: body })
+})
+export const deleteProject = (projectId: number, userId: number) => transaction(async db => {
+  requireOwner(await requireMember(db, projectId, userId))
+  await db.project.delete({ where: { id: projectId } })
+})
+export const addMember = (projectId: number, email: string, userId: number) => transaction(async db => {
+  requireOwner(await requireMember(db, projectId, userId))
+  const user = await db.user.findUnique({ where: { email } })
+  if (!user) throw new AppError(404, 'Usuario no encontrado')
+  const existing = await db.projectMember.findUnique({ where: { userId_projectId: { userId: user.id, projectId } } })
+  if (existing) throw new AppError(409, 'El usuario ya es miembro del proyecto')
+  return db.projectMember.create({ data: { userId: user.id, projectId, role: 'MEMBER' } })
+})
+export const removeMember = (projectId: number, memberId: number, userId: number) => transaction(async db => {
+  const requester = await requireMember(db, projectId, userId)
+  if (memberId !== userId) requireOwner(requester)
+  const target = await requireMember(db, projectId, memberId)
+  if (target.role === 'OWNER') throw new AppError(409, 'No se puede retirar a un propietario. La transferencia de propiedad aún no está disponible')
+  await unassignTasks(db, memberId, userId, 'MEMBER_REMOVED', projectId)
+  await db.projectMember.delete({ where: { userId_projectId: { userId: memberId, projectId } } })
+})
+export const updateMemberPermissions = (projectId: number, memberId: number, userId: number, data: { canCreateTasks: boolean; canEditTasks: boolean }) => transaction(async db => {
+  requireOwner(await requireMember(db, projectId, userId))
+  const target = await requireMember(db, projectId, memberId)
+  if (target.role === 'OWNER') throw new AppError(409, 'El propietario siempre tiene todos los permisos')
+  return db.projectMember.update({ where: { userId_projectId: { userId: memberId, projectId } }, data })
+})
