@@ -47,3 +47,5 @@ Estado CI remoto al preparar estos commits: pendiente de ejecución; se actualiz
 
 
 Revalidación de la rama de entrega: backend build/tipos y 51 pruebas aprobadas; instalador Iniciar y check-demo ejecutados nuevamente en Windows/Compose aislado. Recorrido portfolio-check aprobado con correo real, edición concurrente y tres tamaños. Las comprobaciones frontend/Python/E2E y CI se completan antes del cierre de revisión. Los comandos exactos se mantienen en testing.md. No se repitió instalación desde snapshot vacío en esta pasada: su evidencia anterior se conserva y se revalidó operación sobre la instalación sintética existente.
+
+Revisi?n del diff completo contra main: se corrigieron espacios finales del esquema baseline. Quedan dos avisos de l?nea vac?a final en SQL de migraciones baseline/auth_sessions ya aplicadas durante pruebas; se preservaron sus bytes/checksums. No son fallos SQL. El diff de cambios de trabajo estaba limpio, pero eso no equivale al diff completo contra main.

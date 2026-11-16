@@ -16,7 +16,7 @@ model User {
   password     String
   role         Role            @default(MEMBER)
   avatarColor  String?         @default("#4f46e5")
-  avatarUrl    String?         
+  avatarUrl    String?
   createdAt    DateTime        @default(now())
 
   // Relaciones existentes
@@ -43,7 +43,7 @@ model Project {
 
   members     ProjectMember[]
   tasks       Task[]
-  
+
   // Relación con Logs (Para ver actividad por proyecto)
   activityLogs ActivityLog[]
 
@@ -79,7 +79,7 @@ model Task {
 
   projectId   Int
   project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
+
   assigneeId  Int?
   assignee    User?      @relation(fields: [assigneeId], references: [id])
 
@@ -99,7 +99,7 @@ model Comment {
 
   userId    Int
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   taskId    Int
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
@@ -121,10 +121,10 @@ model ActivityLog {
   // Relaciones
   userId      Int
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   projectId   Int?
   project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
+
   taskId      Int?
   task        Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
@@ -141,7 +141,7 @@ model Attachment {
 
   taskId    Int
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  
+
   userId    Int
   user      User     @relation(fields: [userId], references: [id])
 
