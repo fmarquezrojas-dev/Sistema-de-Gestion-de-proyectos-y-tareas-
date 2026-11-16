@@ -1,27 +1,28 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from email_service import send_due_task_reminder
-from typing import Optional
+import asyncio
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from config import Settings
+from scheduler import Worker
 
-app = FastAPI(title="SYNKRO Notification Service")
-
-class TaskAlertPayload(BaseModel):
-    user_email: str
-    user_name:  str
-    task_title: str
-    task_id:    int
-    project_name: Optional[str] = None
-    due_date:   str
-    alert_type: str  # "due_soon" | "overdue" | "assigned"
-
-@app.post("/notify/task-alert")
-async def send_task_alert(payload: TaskAlertPayload):
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    worker = Worker(Settings.load())
+    app.state.worker = worker
+    task = asyncio.create_task(worker.run())
     try:
-        await send_due_task_reminder(payload)
-        return {"status": "sent", "to": payload.user_email}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        yield
+    finally:
+        worker.stop.set()
+        # Terminar el ciclo actual antes de cerrar HTTP; SMTP tiene timeout acotado.
+        await task
+        await worker.close()
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+app = FastAPI(title="SYNKRO Notificaciones", lifespan=lifespan)
+
+@app.get("/health/live")
+def live():
+    return {"status": "alive", "smtpVerified": False}
+
+@app.get("/health/status")
+def status():
+    return {"lastCycleOk": app.state.worker.last_cycle_ok, "smtpVerified": False}

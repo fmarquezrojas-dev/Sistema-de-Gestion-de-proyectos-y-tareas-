@@ -34,3 +34,9 @@ Thumbs.db
 # Archivos temporales de carga
 uploads/
 tmp/
+# Artefactos de pruebas de navegador
+frontend/test-results/
+frontend/playwright-report/
+
+# Respaldos locales
+*.dump
