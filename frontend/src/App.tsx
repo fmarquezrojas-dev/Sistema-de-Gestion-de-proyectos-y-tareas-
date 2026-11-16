@@ -1,17 +1,19 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import PrivateRoute from './components/PrivateRoute'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import Dashboard from './pages/Dashboard'
-import Projects from './pages/Projects'
-import ProjectDetail from './pages/ProjectDetail'
-import Tasks from './pages/Tasks'
-import Profile from './pages/Profile'
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Projects = lazy(() => import('./pages/Projects'))
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
+const Tasks = lazy(() => import('./pages/Tasks'))
+const Profile = lazy(() => import('./pages/Profile'))
 
 function App() {
   return (
     <AuthProvider>
+      <Suspense fallback={<p role="status">Cargando pantalla...</p>}>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
@@ -22,6 +24,7 @@ function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
       </Routes>
+      </Suspense>
     </AuthProvider>
   )
 }

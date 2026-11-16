@@ -1,3 +1,4 @@
+import { errorMessage } from '../services/errors'
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import api from '../services/api'
@@ -12,7 +13,7 @@ const Register = () => {
 
   const evaluateStrength = (pw: string): number => {
     let score = 0
-    if (pw.length >= 6)  score++
+    if (pw.length >= 8)  score++
     if (pw.length >= 10) score++
     if (/[A-Z]/.test(pw) || /\d/.test(pw)) score++
     return score
@@ -26,14 +27,14 @@ const Register = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (form.password.length < 6) { setError('La contraseña debe tener al menos 6 caracteres.'); return }
+    if (form.password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres.'); return }
     setError('')
     setLoading(true)
     try {
       await api.post('/auth/register', form)
       navigate('/login')
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Error al crear la cuenta. Intenta nuevamente.')
+    } catch (err) {
+      setError(errorMessage(err, 'Error al crear la cuenta. Intenta nuevamente.'))
     } finally {
       setLoading(false)
     }
@@ -118,7 +119,7 @@ const Register = () => {
                   name="password"
                   value={form.password}
                   onChange={handleChange}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 8 caracteres"
                   autoComplete="new-password"
                   required
                 />

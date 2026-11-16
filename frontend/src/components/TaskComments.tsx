@@ -1,3 +1,4 @@
+import { errorMessage, errorStatus } from '../services/errors'
 /**
  * frontend/src/components/TaskComments.tsx
  *
@@ -13,7 +14,7 @@
  *   DELETE /tasks/:taskId/comments/:commentId
  */
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import api from '../services/api'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -32,7 +33,7 @@ interface Comment {
 interface TaskCommentsProps {
   taskId:      number
   currentUser: { id: number; name: string } | null
-  readOnly?:   boolean;
+  canModerate?: boolean;
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -72,9 +73,10 @@ const CommentAvatar = ({ user, size = 32 }: {
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-const TaskComments = ({ taskId, currentUser }: TaskCommentsProps) => {
+const TaskComments = ({ taskId, currentUser, canModerate = false }: TaskCommentsProps) => {
+  const [accessible, setAccessible] = useState(true)
   const [comments,  setComments]  = useState<Comment[]>([])
-  const [loading,   setLoading]   = useState(false)
+  const [loading,   setLoading]   = useState(true)
   const [content,   setContent]   = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
@@ -82,23 +84,16 @@ const TaskComments = ({ taskId, currentUser }: TaskCommentsProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const listEndRef  = useRef<HTMLDivElement>(null)
 
-  const fetchComments = async () => {
-    setLoading(true)
-    try {
-      const res = await api.get(`/tasks/${taskId}/comments`)
-      const rawData = res.data?.data ?? res.data?.comments ?? res.data
-      setComments(Array.isArray(rawData) ? rawData : [])
-    } catch (err: any) {
-      const status = err?.response?.status
-      const msg = err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Error al cargar'
-      setError(status === 404 ? 'Ruta no encontrada. Verifica que el backend tenga implementado GET /tasks/:id/comments' : msg)
-      console.error('❌ TaskComments GET error:', status, err?.response?.data)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const fetchComments = useCallback(() => api.get(`/tasks/${taskId}/comments`).then(res => {
+    const rawData = res.data?.data ?? res.data?.comments ?? res.data
+    setAccessible(true); setError(null)
+    setComments(Array.isArray(rawData) ? rawData : [])
+  }).catch((err: unknown) => {
+    if (errorStatus(err) === 404) { setComments([]); setAccessible(false) }
+    setError(errorMessage(err, 'Error al cargar comentarios'))
+  }).finally(() => setLoading(false)), [taskId])
 
-  useEffect(() => { fetchComments() }, [taskId])
+  useEffect(() => { void fetchComments() }, [fetchComments])
 
   // Auto-scroll al añadir comentario
   useEffect(() => {
@@ -106,10 +101,10 @@ const TaskComments = ({ taskId, currentUser }: TaskCommentsProps) => {
       listEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [comments.length])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault()
     const trimmed = content.trim()
-    if (!trimmed) return
+    if (!trimmed || !accessible || submitting) return
     setSubmitting(true)
     setError(null)
     try {
@@ -126,16 +121,9 @@ const TaskComments = ({ taskId, currentUser }: TaskCommentsProps) => {
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
       }
-    } catch (err: any) {
-      // Mostrar el error real del backend para facilitar el diagnóstico
-      const status  = err?.response?.status
-      const backMsg = err?.response?.data?.error
-                   || err?.response?.data?.message
-                   || err?.response?.data?.msg
-                   || err?.message
-      const display = status ? `[${status}] ${backMsg || 'Error del servidor'}` : (backMsg || 'Error de red')
-      setError(display)
-      console.error('❌ TaskComments POST error:', status, err?.response?.data)
+    } catch (err) {
+      if (errorStatus(err) === 404) { setComments([]); setAccessible(false) }
+      setError(errorMessage(err, 'No se pudo añadir el comentario'))
     } finally {
       setSubmitting(false)
     }
@@ -146,8 +134,9 @@ const TaskComments = ({ taskId, currentUser }: TaskCommentsProps) => {
     try {
       await api.delete(`/tasks/${taskId}/comments/${commentId}`)
       setComments(prev => prev.filter(c => c.id !== commentId))
-    } catch {
-      setError('Error al eliminar comentario')
+    } catch (err) {
+      if (errorStatus(err) === 404) { setComments([]); setAccessible(false) }
+      setError(errorMessage(err, 'Error al eliminar comentario'))
     } finally {
       setDeletingId(null)
     }
@@ -157,7 +146,7 @@ const TaskComments = ({ taskId, currentUser }: TaskCommentsProps) => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault()
-      handleSubmit(e as any)
+      void handleSubmit(e)
     }
   }
 
@@ -200,7 +189,7 @@ const TaskComments = ({ taskId, currentUser }: TaskCommentsProps) => {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '0.85rem', maxHeight: '260px', overflowY: 'auto' }}>
           {comments.map(comment => {
-            const isOwn = comment.user.id === currentUser?.id
+            const isOwn = comment.user.id === currentUser?.id || canModerate
             return (
               <div key={comment.id} style={{
                 display:     'flex',
@@ -276,6 +265,8 @@ const TaskComments = ({ taskId, currentUser }: TaskCommentsProps) => {
         <div style={{ flex: 1, position: 'relative' }}>
           <textarea
             ref={textareaRef}
+            maxLength={5000}
+            disabled={!accessible}
             value={content}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
@@ -302,7 +293,7 @@ const TaskComments = ({ taskId, currentUser }: TaskCommentsProps) => {
         </div>
         <button
           type="submit"
-          disabled={submitting || !content.trim()}
+          disabled={!accessible || submitting || !content.trim()}
           style={{
             background:    content.trim() ? '#4f46e5' : 'var(--border-color)',
             color:         content.trim() ? '#fff' : 'var(--text-muted)',

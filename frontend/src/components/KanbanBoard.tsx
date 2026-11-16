@@ -23,6 +23,7 @@ import {
   useSensors,
   useSensor,
   type DragStartEvent,
+  type DragOverEvent,
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
@@ -74,7 +75,7 @@ const PRIORITY_LABEL: Record<string, string> = {
 
 // ─── Helper de fecha ──────────────────────────────────────────────────────────
 const getDueBadge = (
-  dueDate: string | undefined,
+  dueDate: string | null | undefined,
   status: string,
   now: Date,
 ): { label: string; color: string } | null => {
@@ -100,21 +101,21 @@ const KanbanTaskCard = ({
   now: Date
   isOverlay?: boolean
 }) => {
-  const dueDate  = (task as any).dueDate as string | undefined
+  const dueDate  = task.dueDate
   const dueBadge = getDueBadge(dueDate, task.status, now)
-  const assignee = (task as any).assignee
-  const project  = (task as any).project
+  const assignee = task.assignee
+  const project  = task.project
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id:   String(task.id),
     data: { task },
-    disabled: isOverlay,
+    disabled: isOverlay || !task.canEdit,
   })
 
   const style: React.CSSProperties = {
     transform: CSS.Translate.toString(transform),
     opacity:   isDragging ? 0.35 : 1,
-    cursor:    isDragging ? 'grabbing' : 'grab',
+    cursor:    !task.canEdit ? 'default' : isDragging ? 'grabbing' : 'grab',
   }
 
   const cardContent = (
@@ -132,7 +133,7 @@ const KanbanTaskCard = ({
   transform:    isOverlay ? 'rotate(2deg)' : undefined,
   transition:   'box-shadow 0.15s',
   // Lógica unificada: si vence hoy/venció, tinte rojizo, si no, blanco
-  background: (task as any).dueDate && getDueBadge((task as any).dueDate, task.status, now)?.color === '#ef4444'
+  background: task.dueDate && getDueBadge(task.dueDate, task.status, now)?.color === '#ef4444'
     ? '#fff8f8'
     : '#fff',
 }}>
@@ -151,11 +152,11 @@ const KanbanTaskCard = ({
       </div>
 
       {/* Descripción */}
-      {(task as any).description && (
+      {task.description && (
         <p style={{ margin: '0 0 0.6rem', fontSize: '0.77rem', color: '#64748b',
           lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2,
           WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-          {(task as any).description}
+          {task.description}
         </p>
       )}
 
@@ -304,7 +305,7 @@ const KanbanColumn = ({
 // ─── KanbanBoard principal ────────────────────────────────────────────────────
 interface KanbanBoardProps {
   tasks:          Task[]
-  onStatusChange: (taskId: number, newStatus: string) => Promise<void>
+  onStatusChange: (taskId: number, newStatus: Task["status"]) => Promise<void>
   now:            Date
 }
 
@@ -338,8 +339,8 @@ const KanbanBoard = ({ tasks, onStatusChange, now }: KanbanBoardProps) => {
     setActiveTask(task)
   }
 
-  const handleDragOver = (event: any) => {
-    setDraggingOverCol(event.over?.id ?? null)
+  const handleDragOver = (event: DragOverEvent) => {
+    setDraggingOverCol(event.over ? String(event.over.id) : null)
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -350,9 +351,9 @@ const KanbanBoard = ({ tasks, onStatusChange, now }: KanbanBoardProps) => {
     if (!over) return
 
     const task      = active.data.current?.task as Task
-    const newStatus = over.id as string
+    const newStatus = over.id as Task["status"]
 
-    if (task.status === newStatus) return
+    if (!tasks.find(t => t.id === task.id)?.canEdit || task.status === newStatus) return
 
     setMovingTaskId(task.id)
     setErrorMsg(null)
@@ -368,6 +369,15 @@ const KanbanBoard = ({ tasks, onStatusChange, now }: KanbanBoardProps) => {
 
   return (
     <div>
+      <details><summary>Cambiar estado con teclado</summary>
+        {tasks.map(task => <label key={task.id} style={{ display: 'block' }}>{task.title}
+          <select aria-label={`Estado en tablero de ${task.title}`} value={task.status}
+            disabled={!task.canEdit || task.saving || task.uncertain}
+            onChange={event => { void onStatusChange(task.id, event.target.value as Task['status']) }}>
+            {COLUMNS.map(column => <option key={column.id} value={column.id}>{column.label}</option>)}
+          </select>{task.saving && <span role="status">Guardando...</span>}
+        </label>)}
+      </details>
       {/* Barra de progreso global */}
       <div style={{
         background: '#fff', borderRadius: '12px', padding: '1rem 1.5rem',

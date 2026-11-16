@@ -1,6 +1,7 @@
+import { errorMessage } from '../services/errors'
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/authState'
 
 const Login = () => {
   const [email,    setEmail]    = useState('')
@@ -8,7 +9,7 @@ const Login = () => {
   const [showPass, setShowPass] = useState(false)
   const [error,    setError]    = useState('')
   const [loading,  setLoading]  = useState(false)
-  const { login }  = useAuth()
+  const { login, message, status, logout }  = useAuth()
   const navigate   = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -18,8 +19,8 @@ const Login = () => {
     try {
       await login(email, password)
       navigate('/dashboard')
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Credenciales incorrectas. Revisa tu email y contraseña.')
+    } catch (err) {
+      setError(errorMessage(err, 'No se pudo conectar. Inténtalo más tarde'))
     } finally {
       setLoading(false)
     }
@@ -27,6 +28,7 @@ const Login = () => {
 
   return (
     <div style={S.page}>
+      {message && <p role="status" style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 10, background: "var(--bg-card)", padding: "1rem" }}>{message}{status === "error" && <button onClick={() => { void logout() }}>Reintentar cierre de sesión</button>}</p>}
 
       {/* ── Panel izquierdo decorativo ── */}
       <div style={S.left}>

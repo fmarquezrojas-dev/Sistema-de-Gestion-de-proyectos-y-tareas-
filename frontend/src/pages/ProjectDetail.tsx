@@ -1,9 +1,13 @@
-import { useEffect, useState, useRef } from "react";
+import { conflictTask, mergeTask, mergeTasks, displayValue, fieldLabels } from '../services/taskState';
+import TaskActivity from '../components/TaskActivity';
+import { useTaskStatus } from '../hooks/useTaskStatus';
+import { errorMessage, errorStatus } from '../services/errors';
+import { useEffect, useState, useRef, useCallback, type Dispatch, type SetStateAction } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/authState";
 import Navbar from "../components/Navbar";
 import api from "../services/api";
-import type { Project, Task } from "../types";
+import type { Project, Task, ProjectMember, User, TaskUpdate, TaskMutation } from "../types";
 import TaskComments from "../components/TaskComments";
 
 // ─── Avatar: muestra foto subida si existe, si no la inicial con color ───────
@@ -298,55 +302,81 @@ const EditTaskModal = ({
   onClose,
   saving,
 }: {
-  task: any;
-  members: any[];
-  onSave: (taskId: number, data: any) => void;
+  task: Task;
+  members: ProjectMember[];
+  onSave: (taskId: number, data: TaskMutation) => Promise<Task>;
   onClose: () => void;
   saving: boolean;
 }) => {
-  const existingDate = task.dueDate ? new Date(task.dueDate) : null;
-  const dateStr = existingDate ? existingDate.toISOString().split("T")[0] : "";
-  const hasTime = existingDate
-    ? existingDate.getHours() !== 0 || existingDate.getMinutes() !== 0
-    : false;
-  const timeStr =
-    hasTime && existingDate
-      ? `${String(existingDate.getHours()).padStart(2, "0")}:${String(existingDate.getMinutes()).padStart(2, "0")}`
-      : "";
-
-  const [form, setForm] = useState({
-    title: task.title || "",
-    description: task.description || "",
-    priority: task.priority || "MEDIUM",
-    status: task.status || "PENDING",
-    dueDate: dateStr,
-    dueTime: timeStr,
-    assigneeId: task.assigneeId ? String(task.assigneeId) : "",
-  });
+  const toForm = (value: Task) => {
+    const date = value.dueDate ? new Date(value.dueDate) : null;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return { title: value.title, description: value.description ?? '', priority: value.priority, status: value.status,
+      dueDate: date ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` : '',
+      dueTime: date ? `${pad(date.getHours())}:${pad(date.getMinutes())}` : '',
+      assigneeId: value.assigneeId ? String(value.assigneeId) : '' };
+  };
+  const [base, setBase] = useState(task);
+  const [form, setForm] = useState(() => toForm(task));
+  const [conflict, setConflict] = useState<Task | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const alertRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { titleRef.current?.focus(); }, []);
+  useEffect(() => { if (saveError || conflict) alertRef.current?.focus(); }, [saveError, conflict]);
+  const changedFields = () => {
+    const initial = toForm(base);
+    const patch: TaskUpdate = {};
+    if (form.title !== initial.title) patch.title = form.title;
+    if (form.description !== initial.description) patch.description = form.description;
+    if (form.priority !== initial.priority) patch.priority = form.priority;
+    if (form.status !== initial.status) patch.status = form.status;
+    if (form.assigneeId !== initial.assigneeId) patch.assigneeId = form.assigneeId ? Number(form.assigneeId) : null;
+    if (form.dueDate !== initial.dueDate || form.dueTime !== initial.dueTime)
+      patch.dueDate = form.dueDate ? new Date(`${form.dueDate}T${form.dueTime || '23:59'}:00`).toISOString() : null;
+    return patch;
+  };
+  const resolveConflict = (reapply: boolean) => {
+    if (!conflict) return;
+    const patch = reapply ? changedFields() : {};
+    setBase(conflict);
+    setForm(toForm({ ...conflict, ...patch }));
+    setConflict(null); setSaveError(null); setReviewing(reapply);
+    titleRef.current?.focus();
+  };
 
   const previewDate = form.dueDate
     ? new Date(`${form.dueDate}T${form.dueTime || "23:59"}:00`)
     : null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let dueDateISO: string | undefined;
-    if (form.dueDate)
-      dueDateISO = new Date(
-        `${form.dueDate}T${form.dueTime || "23:59"}:00`,
-      ).toISOString();
-    onSave(task.id, {
-      title: form.title,
-      description: form.description,
-      priority: form.priority,
-      status: form.status,
-      dueDate: dueDateISO,
-      assigneeId: form.assigneeId ? Number(form.assigneeId) : undefined,
-    });
+    if (saving || blocked || conflict) return;
+    try {
+      await onSave(task.id, { ...changedFields(), expectedVersion: base.version });
+    } catch (error) {
+      const latest = conflictTask(error);
+      if (latest) { setConflict(latest); setSaveError('Esta tarea cambió mientras la estabas editando'); }
+      else {
+        const code = errorStatus(error);
+        setSaveError(code === 404 ? 'La tarea fue eliminada o ya no tienes acceso. Tus cambios se conservan aquí' : errorMessage(error, 'Resultado no confirmado. Consulta la versión actual antes de guardar otra vez'));
+        if (code === 403 || code === 404 || !code || code >= 500) setBlocked(true);
+      }
+    }
+  };
+  const checkCurrent = async () => {
+    try {
+      const result = await api.get<{ data: Task }>(`/tasks/${task.id}`);
+      setConflict(result.data.data);
+      setBlocked(!result.data.data.canEdit);
+      setSaveError(result.data.data.canEdit ? 'Revisa el estado actual antes de reaplicar tus cambios' : 'Ya no tienes permiso para editar esta tarea');
+    } catch (error) { setSaveError(errorMessage(error)); }
   };
 
   return (
-    <div
+    <div role="dialog" aria-modal="true" aria-label="Editar tarea"
       style={{
         position: "fixed",
         inset: 0,
@@ -402,11 +432,27 @@ const EditTaskModal = ({
           </button>
         </div>
         <form onSubmit={handleSubmit}>
+          {(saveError || conflict) && <div ref={alertRef} role="alert" tabIndex={-1}>
+            <p>{saveError}</p>
+            {conflict && <><p>Versión actual: {conflict.version}. Compara con tus cambios:</p>
+              <dl>{Object.entries(changedFields()).map(([field, local]) => <div key={field}>
+                <dt>{fieldLabels[field]}</dt><dd>Tu cambio: {displayValue(field === "assigneeId" && local ? members.find(m => m.userId === local)?.user ?? local : local, field)}</dd>
+                <dd>Actual: {displayValue(field === "assigneeId" ? conflict.assignee : conflict[field as keyof Task], field)}</dd>
+              </div>)}</dl>
+              <details><summary>Consultar versión actual</summary><dl>{Object.keys(fieldLabels).map(field => <div key={field}><dt>{fieldLabels[field]}</dt><dd style={{ whiteSpace: "pre-wrap" }}>{displayValue(field === "assigneeId" ? conflict.assignee : conflict[field as keyof Task], field)}</dd></div>)}</dl></details>
+              <button type="button" onClick={() => resolveConflict(false)}>Cargar versión actual y descartar mis cambios</button>
+              <button type="button" disabled={blocked} onClick={() => resolveConflict(true)}>Revisar y reaplicar mis cambios</button>
+            </>}
+            {blocked && <button type="button" onClick={() => { void checkCurrent(); }}>Consultar estado actual</button>}
+          </div>}
+          {reviewing && <p role="status">Revisa los campos. Confirma de nuevo para guardar sobre la versión {base.version}.</p>}
           <div style={S.formRow}>
             <div style={{ ...S.field, flex: 2 }}>
               <label style={S.label}>Título *</label>
               <input
                 style={S.input}
+                ref={titleRef}
+                aria-label="Título de la tarea"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 required
@@ -418,7 +464,7 @@ const EditTaskModal = ({
               <select
                 style={S.input}
                 value={form.priority}
-                onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                onChange={(e) => setForm({ ...form, priority: e.target.value as Task["priority"] })}
               >
                 <option value="LOW">🟢 Baja</option>
                 <option value="MEDIUM">🟡 Media</option>
@@ -432,7 +478,7 @@ const EditTaskModal = ({
               <select
                 style={S.input}
                 value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                onChange={(e) => setForm({ ...form, status: e.target.value as Task["status"] })}
               >
                 <option value="PENDING">Pendiente</option>
                 <option value="IN_PROGRESS">En progreso</option>
@@ -449,7 +495,7 @@ const EditTaskModal = ({
                 }
               >
                 <option value="">Sin asignar</option>
-                {members.map((m: any) => (
+                {members.map((m) => (
                   <option key={m.userId} value={m.userId}>
                     {m.user?.name} ({m.role === "OWNER" ? "Owner" : "Member"})
                   </option>
@@ -539,8 +585,8 @@ const EditTaskModal = ({
             />
           </div>
           <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
-            <button style={S.submitBtn} type="submit" disabled={saving}>
-              {saving ? "Guardando..." : "💾 Guardar cambios"}
+            <button style={S.submitBtn} type="submit" disabled={saving || blocked || Boolean(conflict)}>
+              {saving ? "Guardando..." : reviewing ? "Confirmar cambios revisados" : "💾 Guardar cambios"}
             </button>
             <button
               type="button"
@@ -562,8 +608,8 @@ const PermissionsModal = ({
   onClose,
   saving,
 }: {
-  member: any;
-  onSave: (memberId: number, perms: any) => void;
+  member: ProjectMember;
+  onSave: (memberId: number, perms: Pick<ProjectMember, 'canCreateTasks' | 'canEditTasks'>) => void;
   onClose: () => void;
   saving: boolean;
 }) => {
@@ -645,8 +691,8 @@ const PermissionsModal = ({
           {
             key: "canEditTasks",
             icon: "✏️",
-            title: "Editar/eliminar tareas",
-            desc: "Puede editar y eliminar tareas del proyecto",
+            title: "Editar tareas",
+            desc: "Puede editar tareas y cambiar su estado",
           },
         ].map(({ key, icon, title, desc }) => (
           <div
@@ -746,6 +792,18 @@ const ProjectDetail = () => {
   const [project, setProject] = useState<(Project & { tasks: Task[] }) | null>(
     null,
   );
+  const setProjectTasks: Dispatch<SetStateAction<Task[]>> = useCallback(action => {
+    setProject(current => current ? { ...current, tasks: typeof action === 'function' ? action(current.tasks) : action } : current);
+  }, []);
+  const statusTasks = (project?.tasks || []).map(task => {
+    const member = project?.members.find(m => m.userId === user?.id);
+    return { ...task, canEdit: task.canEdit !== false && (member?.role === 'OWNER' || member?.canEditTasks === true) };
+  });
+  const taskStatus = useTaskStatus(statusTasks, setProjectTasks);
+  const requestSequence = useRef(0);
+  const projectLoaded = useRef(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [activityId, setActivityId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(() => new Date());
   const clockRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -761,13 +819,13 @@ const ProjectDetail = () => {
   });
   const [creating, setCreating] = useState(false);
   const [filterStatus, setFilterStatus] = useState("");
-  const [editingTask, setEditingTask] = useState<any>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [savingTask, setSavingTask] = useState(false);
-  const [permMember, setPermMember] = useState<any>(null);
+  const [permMember, setPermMember] = useState<ProjectMember | null>(null);
   const [savingPerms, setSavingPerms] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<User[]>([]);
   const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
@@ -812,21 +870,34 @@ const ProjectDetail = () => {
     };
   }, []);
 
-  const fetchProject = async () => {
+  const fetchProject = useCallback(async () => {
+    const sequence = ++requestSequence.current;
+    const startedDuringMutation = taskStatus.pending.current.size > 0;
     try {
       const res = await api.get(`/projects/${id}`);
-      const raw = res.data?.data ?? res.data;
-      setProject({ ...raw, tasks: raw.tasks || [] });
+      const raw = (res.data?.data ?? res.data) as Project & { tasks: Task[] };
+      const member = raw.members.find(m => m.userId === user?.id);
+      const canEdit = member?.role === "OWNER" || member?.canEditTasks === true;
+      if (!startedDuringMutation && taskStatus.pending.current.size === 0 && sequence === requestSequence.current) {
+        setProject(current => ({ ...raw, tasks: mergeTasks(current?.tasks || [], (raw.tasks || []).map(t => ({ ...t, canEdit }))) }));
+        projectLoaded.current = true; setRefreshError(null);
+      }
     } catch {
-      navigate("/projects");
+      if (!projectLoaded.current) navigate("/projects");
+      else if (sequence === requestSequence.current) setRefreshError("No se pudo consultar el proyecto. Los borradores abiertos se conservan; el acceso se comprobará al guardar.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigate, taskStatus.pending, user?.id]);
 
   useEffect(() => {
-    fetchProject();
-  }, [id]);
+    void fetchProject();
+    const timer = setInterval(() => { void fetchProject(); }, 30000);
+    const refresh = () => { void fetchProject(); };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('synkro:access-changed', refresh);
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('synkro:access-changed', refresh); };
+  }, [fetchProject]);
   useEffect(() => {
     const h = () => setShowResults(false);
     document.addEventListener("click", h);
@@ -834,7 +905,7 @@ const ProjectDetail = () => {
   }, []);
 
   const currentMember = project?.members?.find(
-    (m: any) => m.userId === user?.id,
+    (m) => m.userId === user?.id,
   );
   const isOwner = currentMember?.role === "OWNER";
   const myPermissions = isOwner
@@ -858,9 +929,9 @@ const ProjectDetail = () => {
       const res = await api.get(
         `/auth/users/search?q=${encodeURIComponent(query)}`,
       );
-      const memberIds = project?.members?.map((m: any) => m.userId) || [];
+      const memberIds = project?.members?.map((m) => m.userId) || [];
       setSearchResults(
-        res.data.data.filter((u: any) => !memberIds.includes(u.id)),
+        res.data.data.filter((u: User) => !memberIds.includes(u.id)),
       );
       setShowResults(true);
     } catch {
@@ -870,7 +941,7 @@ const ProjectDetail = () => {
     }
   };
 
-  const handleSelectUser = async (userResult: any) => {
+  const handleSelectUser = async (userResult: User) => {
     setShowResults(false);
     setSearchQuery("");
     setInviting(true);
@@ -878,9 +949,9 @@ const ProjectDetail = () => {
       await api.post(`/projects/${id}/members`, { email: userResult.email });
       showToast(`¡${userResult.name} fue añadido al proyecto!`);
       fetchProject();
-    } catch (err: any) {
+    } catch (err) {
       showToast(
-        err.response?.data?.error || "Error al invitar usuario",
+        errorMessage(err, "Error al invitar usuario"),
         "error",
       );
     } finally {
@@ -898,9 +969,9 @@ const ProjectDetail = () => {
           await api.delete(`/projects/${id}/members/${memberId}`);
           showToast(`${memberName} fue removido del proyecto.`);
           fetchProject();
-        } catch (err: any) {
+        } catch (err) {
           showToast(
-            err.response?.data?.error || "Error al quitar miembro",
+            errorMessage(err, "Error al quitar miembro"),
             "error",
           );
         } finally {
@@ -921,8 +992,8 @@ const ProjectDetail = () => {
           await api.delete(`/projects/${id}/members/${user?.id}`);
           showToast("Abandonaste el proyecto.");
           setTimeout(() => navigate("/projects"), 1500);
-        } catch (err: any) {
-          showToast(err.response?.data?.error || "Error", "error");
+        } catch (err) {
+          showToast(errorMessage(err, "Error"), "error");
         }
       },
       "Abandonar",
@@ -938,8 +1009,8 @@ const ProjectDetail = () => {
       setShowEditForm(false);
       showToast("Proyecto actualizado.");
       fetchProject();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Error al editar", "error");
+    } catch (err) {
+      showToast(errorMessage(err, "Error al editar"), "error");
     } finally {
       setEditing(false);
     }
@@ -953,8 +1024,8 @@ const ProjectDetail = () => {
         try {
           await api.delete(`/projects/${id}`);
           navigate("/projects");
-        } catch (err: any) {
-          showToast(err.response?.data?.error || "Error", "error");
+        } catch (err) {
+          showToast(errorMessage(err, "Error"), "error");
         }
       },
       "Eliminar proyecto",
@@ -966,7 +1037,7 @@ const ProjectDetail = () => {
     e.preventDefault();
     setCreating(true);
     try {
-      let dueDateISO: string | undefined;
+      let dueDateISO: string | null = null;
       if (taskForm.dueDate)
         dueDateISO = new Date(
           `${taskForm.dueDate}T${taskForm.dueTime || "23:59"}:00`,
@@ -991,115 +1062,74 @@ const ProjectDetail = () => {
       setShowTaskForm(false);
       showToast("Tarea creada correctamente.");
       fetchProject();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Error al crear tarea", "error");
+    } catch (err) {
+      showToast(errorMessage(err, "Error al crear tarea"), "error");
     } finally {
       setCreating(false);
     }
   };
 
-  const handleSaveEditTask = async (taskId: number, data: any) => {
+  const handleSaveEditTask = async (taskId: number, data: TaskMutation): Promise<Task> => {
+    if (taskStatus.pending.current.has(taskId)) throw new Error('Hay un cambio pendiente');
+    taskStatus.pending.current.add(taskId);
+    requestSequence.current++;
     setSavingTask(true);
     try {
-      await api.put(`/tasks/${taskId}`, data);
-      setEditingTask(null);
-      showToast("Tarea actualizada.");
-      fetchProject();
-    } catch (err: any) {
-      showToast(
-        err.response?.data?.error || "Error al actualizar tarea",
-        "error",
-      );
-    } finally {
-      setSavingTask(false);
-    }
+      const response = await api.put<{ data: Task }>(`/tasks/${taskId}`, data);
+      requestSequence.current++;
+      setProjectTasks(tasks => tasks.map(t => t.id === taskId ? mergeTask(t, response.data.data) : t));
+      setEditingTask(null); showToast('Tarea actualizada.');
+      return response.data.data;
+    } catch (error) {
+      const latest = conflictTask(error);
+      if (latest) setProjectTasks(tasks => tasks.map(t => t.id === taskId ? mergeTask(t, latest) : t));
+      else if (errorStatus(error) === 403) setProjectTasks(tasks => tasks.map(t => t.id === taskId ? { ...t, canEdit: false } : t));
+      throw error;
+    } finally { setSavingTask(false); taskStatus.pending.current.delete(taskId); }
   };
-
-  const handleStatusChange = async (taskId: number, status: string) => {
-    try {
-      await api.put(`/tasks/${taskId}`, { status });
-      fetchProject();
-    } catch {
-      showToast("Error al actualizar tarea", "error");
-    }
+  const handleStatusChange = (taskId: number, status: Task['status']) => {
+    requestSequence.current++;
+    return taskStatus.changeStatus(taskId, status);
   };
-
   const handleDeleteTask = (taskId: number) => {
-    showConfirm(
-      "¿Eliminar esta tarea?",
-      async () => {
-        setConfirm(null);
-        try {
-          await api.delete(`/tasks/${taskId}`);
-          showToast("Tarea eliminada.");
-          fetchProject();
-        } catch {
-          showToast("Error al eliminar tarea", "error");
-        }
-      },
-      "Eliminar",
-      true,
-    );
+    const task = project?.tasks.find(t => t.id === taskId);
+    if (!task || taskStatus.pending.current.has(taskId)) return;
+    showConfirm('¿Eliminar esta tarea y su historial?', async () => {
+      setConfirm(null);
+      if (taskStatus.pending.current.has(taskId)) return;
+      taskStatus.pending.current.add(taskId);
+      requestSequence.current++;
+      setProjectTasks(tasks => tasks.map(t => t.id === taskId ? { ...t, saving: true } : t));
+      try {
+        await api.delete(`/tasks/${taskId}`, { data: { expectedVersion: task.version } });
+        requestSequence.current++;
+        setProjectTasks(tasks => tasks.filter(t => t.id !== taskId));
+        showToast('Tarea eliminada.');
+      } catch (error) {
+        const latest = conflictTask(error);
+        if (latest) setProjectTasks(tasks => tasks.map(t => t.id === taskId ? mergeTask(t, { ...latest, saving: false }) : t));
+        else if (errorStatus(error) === 404) setProjectTasks(tasks => tasks.filter(t => t.id !== taskId));
+        else setProjectTasks(tasks => tasks.map(t => t.id === taskId ? { ...t, saving: false, uncertain: !errorStatus(error) || (errorStatus(error) ?? 0) >= 500 } : t));
+        showToast(errorMessage(error, 'No se confirmó la eliminación. Consulta el estado antes de reintentar'), 'error');
+      } finally { taskStatus.pending.current.delete(taskId); }
+    }, 'Eliminar', true);
   };
 
-  const handleSavePermissions = async (memberId: number, perms: any) => {
+  const handleSavePermissions = async (memberId: number, perms: Pick<ProjectMember, 'canCreateTasks' | 'canEditTasks'>) => {
     setSavingPerms(true);
     try {
       await api.patch(`/projects/${id}/members/${memberId}/permissions`, perms);
       setPermMember(null);
       showToast("Permisos actualizados.");
       fetchProject();
-    } catch (err: any) {
+    } catch (err) {
       showToast(
-        err.response?.data?.error || "Error al actualizar permisos",
+        errorMessage(err, "Error al actualizar permisos"),
         "error",
       );
     } finally {
       setSavingPerms(false);
     }
-  };
-
-  const handleDeleteComment = async (taskId: number, commentId: number) => {
-    // Usamos el ConfirmModal que ya tienes en tu código para que sea estético
-    showConfirm(
-      "¿Eliminar este comentario?",
-      async () => {
-        setConfirm(null);
-        try {
-          // 1. Llamada al backend corregido
-          await api.delete(`/tasks/${taskId}/comments/${commentId}`);
-
-          // 2. Actualización optimista del estado
-          setProject((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              tasks: prev.tasks.map((t) => {
-                if (t.id === taskId) {
-                  return {
-                    ...t,
-                    // Filtramos el comentario eliminado de la lista
-                    comments: (t as any).comments?.filter(
-                      (c: any) => c.id !== commentId,
-                    ),
-                  };
-                }
-                return t;
-              }),
-            };
-          });
-          showToast("Comentario eliminado");
-        } catch (err: any) {
-          console.error(err);
-          showToast(
-            err.response?.data?.error || "No se pudo eliminar el comentario",
-            "error",
-          );
-        }
-      },
-      "Eliminar",
-      true,
-    );
   };
 
   if (loading) return <div style={S.center}>Cargando proyecto...</div>;
@@ -1119,8 +1149,8 @@ const ProjectDetail = () => {
   const overdueCount = project.tasks.filter(
     (t) =>
       t.status !== "COMPLETED" &&
-      (t as any).dueDate &&
-      new Date((t as any).dueDate) < now,
+      t.dueDate &&
+      new Date(t.dueDate) < now,
   ).length;
   const previewDueDate = taskForm.dueDate
     ? new Date(`${taskForm.dueDate}T${taskForm.dueTime || "23:59"}:00`)
@@ -1149,11 +1179,11 @@ const ProjectDetail = () => {
           task={editingTask}
           members={project.members || []}
           onSave={handleSaveEditTask}
-          onClose={() => setEditingTask(null)}
+          onClose={() => { setEditingTask(null); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[title="Editar tarea"]')?.focus()); }}
           saving={savingTask}
         />
       )}
-      {permMember && (
+      {permMember && isOwner && (
         <PermissionsModal
           member={permMember}
           onSave={handleSavePermissions}
@@ -1272,7 +1302,7 @@ const ProjectDetail = () => {
           </div>
         )}
 
-        {!isOwner && !canCreateTask && (
+        {!isOwner && !canCreateTask && !canEditTask && (
           <div
             style={{
               background: "#fffbeb",
@@ -1395,7 +1425,7 @@ const ProjectDetail = () => {
                         style={S.input}
                         value={taskForm.priority}
                         onChange={(e) =>
-                          setTaskForm({ ...taskForm, priority: e.target.value })
+                          setTaskForm({ ...taskForm, priority: e.target.value as Task["priority"] })
                         }
                       >
                         <option value="LOW">🟢 Baja</option>
@@ -1457,7 +1487,7 @@ const ProjectDetail = () => {
                         }
                       >
                         <option value="">Sin asignar</option>
-                        {project.members?.map((m: any) => (
+                        {project.members?.map((m) => (
                           <option key={m.userId} value={m.userId}>
                             {m.user?.name} (
                             {m.role === "OWNER" ? "Owner" : "Member"})
@@ -1539,11 +1569,13 @@ const ProjectDetail = () => {
               </p>
             )}
 
+            {refreshError && <p role="alert">{refreshError}</p>}
+            {taskStatus.mutationError && <p role="alert">{taskStatus.mutationError}</p>}
             {filteredTasks.map((task) => {
               const assigneeMember = project.members?.find(
-                (m: any) => m.userId === (task as any).assigneeId,
-              ) as any;
-              const dueDate = (task as any).dueDate as string | undefined;
+                (m) => m.userId === task.assigneeId,
+              );
+              const dueDate = task.dueDate;
               const overdueInfo = getOverdueInfo(dueDate, task.status, now);
               const upcomingWarn = !overdueInfo
                 ? getUpcomingWarning(dueDate, task.status, now)
@@ -1638,7 +1670,7 @@ const ProjectDetail = () => {
                       >
                         {priorityLabel[task.priority]}
                       </span>
-                      {canEditTask && (
+                      {canEditTask && task.canEdit !== false && (
                         <button
                           onClick={() => setEditingTask(task)}
                           style={{
@@ -1649,12 +1681,13 @@ const ProjectDetail = () => {
                             border: "1px solid #bae6fd",
                             color: "#0369a1",
                           }}
+                          disabled={task.saving || task.uncertain || taskStatus.pendingIds.has(task.id)}
                           title="Editar tarea"
                         >
                           ✏️
                         </button>
                       )}
-                      {canEditTask && (
+                      {isOwner && (
   <button
     onClick={() => handleDeleteTask(task.id)}
     style={{
@@ -1665,6 +1698,7 @@ const ProjectDetail = () => {
       borderRadius: '6px',
       opacity: 1                           // Sube la opacidad al máximo
     }}
+    disabled={task.saving || task.uncertain || taskStatus.pendingIds.has(task.id) || editingTask?.id === task.id}
     title="Eliminar tarea"
   >
     🗑️
@@ -1672,6 +1706,10 @@ const ProjectDetail = () => {
 )}
                     </div>
                   </div>
+                  {task.saving && <p role="status">Guardando tarea...</p>}
+                  {task.uncertain && <button onClick={() => { void taskStatus.checkTask(task.id); }}>Comprobar resultado de {task.title}</button>}
+                  <button onClick={() => setActivityId(activityId === task.id ? null : task.id)} aria-expanded={activityId === task.id}>Actividad de {task.title}</button>
+                  {activityId === task.id && <TaskActivity taskId={task.id} version={task.version} />}
                   {/* Footer: estado · fecha · asignado · toggle comentarios */}
                   <div
                     style={{
@@ -1687,9 +1725,11 @@ const ProjectDetail = () => {
                         background: statusColor[task.status],
                         color: statusTextColor[task.status],
                       }}
+                      disabled={!canEditTask || task.canEdit === false || task.saving || task.uncertain || taskStatus.pendingIds.has(task.id) || editingTask?.id === task.id}
+                      aria-label={`Estado de ${task.title}`}
                       value={task.status}
                       onChange={(e) =>
-                        handleStatusChange(task.id, e.target.value)
+                        handleStatusChange(task.id, e.target.value as Task["status"])
                       }
                     >
                       <option value="PENDING">{statusLabel["PENDING"]}</option>
@@ -1717,7 +1757,7 @@ const ProjectDetail = () => {
                         📅 {formatDueDateTime(dueDate)}
                       </span>
                     )}
-                    {(task as any).assignee && (
+                    {task.assignee && (
                       <div
                         style={{
                           display: "flex",
@@ -1727,7 +1767,7 @@ const ProjectDetail = () => {
                         }}
                       >
                         <Avatar
-                          name={(task as any).assignee.name}
+                          name={task.assignee.name}
                           avatarUrl={assigneeMember?.user?.avatarUrl}
                           avatarColor={assigneeMember?.user?.avatarColor}
                           size={24}
@@ -1743,7 +1783,7 @@ const ProjectDetail = () => {
                             textOverflow: "ellipsis",
                           }}
                         >
-                          {(task as any).assignee.name}
+                          {task.assignee.name}
                         </span>
                       </div>
                     )}
@@ -1755,7 +1795,7 @@ const ProjectDetail = () => {
                         isExpanded ? "Ocultar comentarios" : "Ver comentarios"
                       }
                       style={{
-                        marginLeft: (task as any).assignee ? "0" : "auto",
+                        marginLeft: task.assignee ? "0" : "auto",
                         display: "flex",
                         alignItems: "center",
                         gap: "0.3rem",
@@ -1784,14 +1824,14 @@ const ProjectDetail = () => {
 
                   {/* ── NUEVO: Sección de comentarios expandible ──
                       Fetch lazy: se monta al abrir, se desmonta al cerrar.
-                      readOnly respeta los permisos RBAC del usuario.        */}
+                      Todos los miembros pueden comentar; OWNER puede moderar.        */}
                   {isExpanded && (
                     <TaskComments
                       taskId={task.id}
                       currentUser={
                         user ? { id: user.id, name: user.name } : null
                       }
-                      readOnly={!canEditTask}
+                      canModerate={isOwner}
                     />
                   )}
                 </div>
@@ -1920,7 +1960,7 @@ const ProjectDetail = () => {
                   )}
                 </div>
               )}
-              {project.members?.map((member: any) => {
+              {project.members?.map((member) => {
                 const isMe = member.userId === user?.id;
                 return (
                   <div key={member.userId} style={S.memberItem}>
