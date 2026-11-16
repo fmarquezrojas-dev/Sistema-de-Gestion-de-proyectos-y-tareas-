@@ -1,6 +1,6 @@
-# Estado de entrega local — SYNKRO
+# Informe de cierre de entrega — SYNKRO
 
-Fecha: 16 de noviembre de 2026, America/Lima. Referencia base revisada: `54b84ad35beccc4621da399c8f5a71675e319613` más los commits de la rama `release/synkro-portfolio` que reúnen los bloques 1–4 y operación. Se prepara push autorizado de esa rama y PR en borrador hacia main; no se publica tag, release ni imágenes. Los cambios anteriores se preservan.
+Fecha: 16 de noviembre de 2026, America/Lima. Referencia base revisada: `54b84ad35beccc4621da399c8f5a71675e319613` más los commits de la rama `release/synkro-portfolio` que reúnen los bloques 1–4 y operación. Rama publicada y PR #1 abierto en borrador hacia main; no se publica tag, release ni imágenes. Los cambios anteriores se preservan.
 
 ## Completado y verificado
 
@@ -12,9 +12,10 @@ Fecha: 16 de noviembre de 2026, America/Lima. Referencia base revisada: `54b84ad
 - Interfaz: capturas reales de escritorio/tablet/móvil y revisión de captura móvil. Corregidos menú superpuesto y aviso de permisos impreciso. Comprobados teclado, mensajes/carga/vacío mediante pruebas de componentes; no es una auditoría integral de accesibilidad.
 - Casos negativos: configuración incompleta, motor inaccesible simulado, puerto ajeno y migración fallida conservando marcador. Código no cero y sin borrado. Al inicio se observó Docker apagado y se inició Desktop; no se apagaron proyectos ajenos para probar fallos.
 
+- GitHub Actions aprobado para `a6eda70d7149f61a09edbdd279a4569243c91677`: [ejecución del push](https://github.com/fmarquezrojas-dev/Sistema-de-Gestion-de-proyectos-y-tareas-/actions/runs/43892056352). Builds/tipos, lint, suites backend/frontend/Python, integración SMTP, E2E, auditoría de producción y lockfiles comprobados en Ubuntu. Instalador Windows verificado localmente.
+
 ## Implementado, pendiente de verificación externa
 
-- GitHub Actions: configurado con lockfiles, PostgreSQL/Mailpit de tests, Prisma, builds, lint, suites Python/frontend/backend, SMTP y E2E; **sin ejecución remota comprobada**.
 - SMTP externo y Cloudinary: configuración/guardas disponibles, no se utilizaron credenciales ni destinatarios reales.
 - Entorno HTTPS productivo, cookies en navegador sobre TLS y navegadores no Chromium no verificados en esta entrega.
 
@@ -32,7 +33,7 @@ Windows, PowerShell 5.1, Node 22.14.0/npm 10.9.2, Python 3.13.17, PostgreSQL 17 
 
 Scripts reproducibles: backend/scripts/notification-integration.mjs, backend/scripts/check-demo.mjs, frontend/scripts/portfolio-check.mjs, scripts/test-installation.ps1. Capturas docs/screenshots. Comandos y límites de pruebas en testing.md.
 
-**Estado:** funcionalidad de portafolio local implementada y verificada. Para declarar entrega remota validada falta ejecutar CI sobre un commit publicado voluntariamente; para producción faltan las verificaciones operativas/externas anteriores. No se declara “todo funciona” fuera del alcance comprobado.
+**Estado:** funcionalidad de portafolio implementada y verificada localmente y en CI remoto. Para producción faltan las verificaciones operativas/externas anteriores. No se declara “todo funciona” fuera del alcance comprobado.
 
 
 ## Preparación para revisión en GitHub
@@ -43,9 +44,9 @@ Se revisaron rutas a publicar y diff antes de staging: ejemplos, lockfiles, migr
 
 Correcciones de revisión: detener_proyecto.bat delega al mismo instalador y propaga errores; ejemplos Cloudinary vacíos para no aparentar una integración configurada. No se reconstruyeron los bloques ni reemplazaron archivos con versiones antiguas.
 
-Estado CI remoto al preparar estos commits: pendiente de ejecución; se actualizará con enlace y resultado observado después del push.
+[Rama de entrega](https://github.com/fmarquezrojas-dev/Sistema-de-Gestion-de-proyectos-y-tareas-/tree/release/synkro-portfolio) y [PR en borrador #1](https://github.com/fmarquezrojas-dev/Sistema-de-Gestion-de-proyectos-y-tareas-/pull/1) publicados. CI aprobado en el enlace anterior. Los commits posteriores documentan esta evidencia; sus ejecuciones se pueden consultar en el PR. main conserva `54b84ad35beccc4621da399c8f5a71675e319613`.
 
 
-Revalidación de la rama de entrega: backend build/tipos y 51 pruebas aprobadas; instalador Iniciar y check-demo ejecutados nuevamente en Windows/Compose aislado. Recorrido portfolio-check aprobado con correo real, edición concurrente y tres tamaños. Completadas nuevamente: frontend lint/build y 29 pruebas, Python 7 pruebas, 4 E2E Chromium e integración SMTP (Python apagado/recuperado, sin duplicados, unknown sin reenvío). Ambos npm audit de producción finalizaron sin hallazgos. CI remoto se comprueba después del push. Los comandos exactos se mantienen en testing.md. No se repitió instalación desde snapshot vacío en esta pasada: su evidencia anterior se conserva y se revalidó operación sobre la instalación sintética existente.
+Revalidación de la rama de entrega: backend build/tipos y 51 pruebas aprobadas; instalador Iniciar y check-demo ejecutados nuevamente en Windows/Compose aislado. Recorrido portfolio-check aprobado con correo real, edición concurrente y tres tamaños. Completadas nuevamente: frontend lint/build y 29 pruebas, Python 7 pruebas, 4 E2E Chromium e integración SMTP (Python apagado/recuperado, sin duplicados, unknown sin reenvío). Ambos npm audit de producción finalizaron sin hallazgos. CI remoto comprobado con el resultado enlazado arriba. Los comandos exactos se mantienen en testing.md. No se repitió instalación desde snapshot vacío en esta pasada: su evidencia anterior se conserva y se revalidó operación sobre la instalación sintética existente.
 
-Revisi?n del diff completo contra main: se corrigieron espacios finales del esquema baseline. Quedan dos avisos de l?nea vac?a final en SQL de migraciones baseline/auth_sessions ya aplicadas durante pruebas; se preservaron sus bytes/checksums. No son fallos SQL. El diff de cambios de trabajo estaba limpio, pero eso no equivale al diff completo contra main.
+Revisión del diff completo contra main: se corrigieron espacios finales del esquema baseline. Quedan dos avisos de línea vacía final en SQL de migraciones baseline/auth_sessions ya aplicadas durante pruebas; se preservaron sus bytes/checksums. No son fallos SQL. El diff de cambios de trabajo estaba limpio, pero eso no equivale al diff completo contra main.

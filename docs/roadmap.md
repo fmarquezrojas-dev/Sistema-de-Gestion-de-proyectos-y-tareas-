@@ -39,7 +39,7 @@ Migración aplicada solo a la base aislada de pruebas. Sin WebSockets, auditorí
 
 ## Bloque 4 — Notificaciones y estabilización
 
-Completado y verificado localmente: registro durable PostgreSQL, asignaciones transaccionales, recordatorios deduplicados, reclamos atómicos, SMTP real Python/Mailpit, resultados inciertos y administración local. Lint global corregido, dependencias actualizadas dentro de rangos existentes, builds/regresiones aprobados. CI configurado; ejecución remota pendiente.
+Completado y verificado localmente: registro durable PostgreSQL, asignaciones transaccionales, recordatorios deduplicados, reclamos atómicos, SMTP real Python/Mailpit, resultados inciertos y administración local. Lint global corregido, dependencias actualizadas dentro de rangos existentes, builds/regresiones aprobados. [CI remoto aprobado sobre a6eda70](https://github.com/fmarquezrojas-dev/Sistema-de-Gestion-de-proyectos-y-tareas-/actions/runs/43892056352).
 
 ## Entrega final — Instalación y operación local
 
@@ -49,9 +49,8 @@ No se migró la instalación habitual. Se probó un snapshot limpio del árbol l
 
 ## Pendientes explícitos
 
-- Ejecutar GitHub Actions tras publicar voluntariamente el código; no se hizo push.
 - Resolver deuda de dependencias de desarrollo que requiere decisiones de actualización mayor.
 - Validar SMTP externo, Cloudinary y despliegue HTTPS si se pretende producción.
 - Otros navegadores, carga/rendimiento, retención automática y restauración de respaldos fuera del alcance comprobado.
 
-La entrega funcional local está implementada; la aprobación de producción y la ejecución remota de CI no se presentan como completadas.
+La entrega funcional está implementada y CI remoto aprobado. La aprobación de producción permanece pendiente.

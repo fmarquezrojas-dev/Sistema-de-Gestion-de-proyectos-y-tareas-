@@ -43,7 +43,7 @@ La API Node centraliza negocio y persistencia en PostgreSQL. Python reclama trab
 
 ## Verificación
 
-51 pruebas backend, 29 frontend, 7 Python y 4 E2E Chromium aprobados; builds y lint frontend global pasan. Integración SMTP real en Mailpit y recorrido Compose con dos usuarios, permisos, conflicto, historial y teclado Kanban ejecutados. Instalación en snapshot sin dependencias, ruta con espacios/Unicode, demo repetida, reinicio y actualización comprobados. GitHub Actions está **configurado, no ejecutado remotamente**.
+51 pruebas backend, 29 frontend, 7 Python y 4 E2E Chromium aprobados; builds y lint frontend global pasan. Integración SMTP real en Mailpit y recorrido Compose con dos usuarios, permisos, conflicto, historial y teclado Kanban ejecutados. Instalación en snapshot sin dependencias, ruta con espacios/Unicode, demo repetida, reinicio y actualización comprobados. [GitHub Actions aprobado](https://github.com/fmarquezrojas-dev/Sistema-de-Gestion-de-proyectos-y-tareas-/actions/runs/43892056352) sobre el commit `a6eda70`.
 
 [Comandos de pruebas](docs/testing.md) · [Evidencia, límites y pendientes](docs/release-readiness.md).
 
@@ -66,4 +66,4 @@ Entorno local de portafolio, no despliegue productivo certificado. SMTP aceptado
 - [Notificaciones y administración local](docs/notifications.md).
 - [Pruebas](docs/testing.md), [roadmap](docs/roadmap.md), [informe de cierre](docs/release-readiness.md), [cambios](CHANGELOG.md).
 
-No se publicaron releases, imágenes ni cambios remotos. Licencia y autoría existentes conservadas.
+Entrega disponible en el [PR en borrador #1](https://github.com/fmarquezrojas-dev/Sistema-de-Gestion-de-proyectos-y-tareas-/pull/1). No se publicaron tags, releases ni imágenes; main permanece sin cambios. Licencia y autoría existentes conservadas.
